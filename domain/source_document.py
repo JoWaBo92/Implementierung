@@ -53,7 +53,7 @@ class TranscriptSegment:
         self.text = text
         self.speaker = speaker
         self.index = index
-        self.segment_id = uuid.uuid4();
+        self.segment_id = uuid.uuid4()
 
     def __str__(self):
         return f'{self.index}. {self.speaker}: "{self.text}"'
@@ -84,10 +84,9 @@ class TimeMark:
 if __name__ == "__main__":
     extract = ASRExtract("FaPra Timealignment\FaPra Timealignment\ADG3149_01_01_de_speaker.csv")
     print(extract)
-    
+
     transcript = ManualTranscript("FaPra Timealignment\FaPra Timealignment\ADG3149_01_01.odt")
     print(transcript)
-
 
 
     
