@@ -4,13 +4,15 @@ from odf import text as odf_text
 from odf import teletype
 
 class SourceDocument:
-    pass
-
-class ManualTranscript(SourceDocument):
-    def __init__(self, fileName):
+    def __init__(self, file_name):
+        self.file_name = file_name
         self.segments = []
 
-        doc = load(fileName)
+class ManualTranscript(SourceDocument):
+    def __init__(self, file_name):
+        super().__init__(file_name)
+
+        doc = load(file_name)
         paras = doc.getElementsByType(odf_text.P)
         plain = [teletype.extractText(p) for p in paras]
 
@@ -28,21 +30,22 @@ class ManualTranscript(SourceDocument):
         return '\n'.join(lines)
 
 class ASRExtract(SourceDocument):
-    def __init__(self, fileName):
-        self.segments = []
+    def __init__(self, file_name):
+        super().__init__(file_name)
+
         self.times = []
 
-        file = open(fileName, 'r')
-        inx = 0
-        for l in file.read().splitlines():
-            splitted = l.split('\t')
+        with open(file_name, 'r', encoding='utf-8') as file:
+            inx = 0
+            for l in file.read().splitlines():
+                splitted = l.split('\t')
 
-            if splitted[0] == "IN":
-                continue
+                if splitted[0] == "IN":
+                    continue
 
-            self.segments.append(TranscriptSegment(splitted[2], splitted[1], inx))
-            inx += 1
-            self.times.append(TimeMark(splitted[0]))
+                self.segments.append(TranscriptSegment(splitted[2], splitted[1], inx))
+                inx += 1
+                self.times.append(TimeMark(splitted[0]))
 
     def __str__(self):
         lines = [f"{self.times[i]}\t{self.segments[i]}" for i in range(len(self.segments))]
@@ -60,7 +63,6 @@ class TranscriptSegment:
 
 class TimeMark:
     def __init__(self, time):
-        print(time)
         self.time = self.time_str_to_ms(time)
 
     @staticmethod

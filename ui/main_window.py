@@ -1,10 +1,13 @@
 from PyQt5.QtWidgets import QMainWindow, QTabWidget, QWidget, QToolBar, QFileDialog, QMessageBox
 from PyQt5.QtCore import Qt
 
+from persistence.project_repository import save_project, load_project
+
 from ui.actions import AppActions
 from ui.tabs.project_tab import ProjectTab
 
 from domain.source_document import ASRExtract, ManualTranscript
+from domain.project import Project
 
 
 class MainWindow(QMainWindow):
@@ -12,6 +15,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Oral History Synchronizer")
         self.resize(1000, 650)
+
+        self.project = Project()
 
         self.actions = AppActions(self)
         self._wire_actions()
@@ -24,6 +29,7 @@ class MainWindow(QMainWindow):
 
     def _wire_actions(self):
         self.actions.load_project.triggered.connect(self.on_load_project)
+        self.actions.save_project.triggered.connect(self.on_save_project)
         self.actions.load_transcript.triggered.connect(self.on_load_transcript)
         self.actions.load_asr_extract.triggered.connect(self.on_load_asr_extract)
         self.actions.exit.triggered.connect(self.close)
@@ -65,7 +71,7 @@ class MainWindow(QMainWindow):
     def _create_tabs(self):
         self.tabs = QTabWidget()
 
-        self.project_tab = ProjectTab()
+        self.project_tab = ProjectTab(self.project)
         self.tab_preprocessing = QWidget()
         self.tab_deviation = QWidget()
         self.tab_alignment = QWidget()
@@ -87,11 +93,30 @@ class MainWindow(QMainWindow):
 
     # ---------- Functions ----------
     def on_load_project(self):
-        path = self._pick_file("Projekt laden", "Projektdateien (*.json *.yaml *.yml *.ohs);;Alle Dateien (*.*)")
-        if not path:
+        project_dir = QFileDialog.getExistingDirectory(self, "Projekt öffnen", "", QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+        if not project_dir:
             return
-        self.statusBar().showMessage(f"Projekt geladen: {path}")
-        self.project_tab.set_log_text(f"Projektdatei:\n{path}")
+        
+        try:
+            self.project = load_project(project_dir)
+            pass
+        except Exception as e:
+            self._show_error("Fehler", f"Projekt konnte nicht geladen werden:\n{e}")
+            return
+
+        self.project_tab.set_transcript(self.project.transcript)
+        self.project_tab.set_asr_extract(self.project.asr_extract)
+
+        self.statusBar().showMessage(f"Projekt geladen: {project_dir}")
+        self.project_tab.set_log_text(f"Projektdatei:\n{project_dir}")
+        print(self.project.transcript)
+
+    def on_save_project(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Projekt speichern unter", "", "Oral History Project (*.ohsproj)")
+
+        if file_path:
+            save_project(self.project, file_path)
+            print(file_path)
 
     def on_load_transcript(self):
         path = self._pick_file("Transkript laden", "OpenDocument Text (*.odt);;Alle Dateien (*.*)")
@@ -99,14 +124,14 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            transcript = ManualTranscript(path)
+            self.project.transcript = ManualTranscript(path)
         except Exception as e:
             self._show_error("Fehler", f"Transkript konnte nicht geladen werden:\n{e}")
             return
 
         self.statusBar().showMessage(f"Transkript geladen: {path}")
-        self.project_tab.set_log_text(f"Transkriptdatei:\n{path}\n\n{transcript}")
-        self.project_tab.set_transcript(transcript)
+        self.project_tab.set_log_text(f"Transkriptdatei:\n{path}\n\n{self.project.transcript}")
+        self.project_tab.set_transcript(self.project.transcript)
 
     def on_load_asr_extract(self):
         path = self._pick_file("ASR-Extrakt laden", "CSV (*.csv);;Alle Dateien (*.*)")
@@ -114,11 +139,11 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            extract = ASRExtract(path)
+            self.project.asr_extract = ASRExtract(path)
         except Exception as e:
             self._show_error("Fehler", f"ASR-Extrakt konnte nicht geladen werden:\n{e}")
             return
 
         self.statusBar().showMessage(f"ASR-Extrakt geladen: {path}")
-        self.project_tab.set_log_text(f"ASR-Extrakt:\n{path}\n\n{extract}")
-        self.project_tab.set_asr_extract(extract)
+        self.project_tab.set_log_text(f"ASR-Extrakt:\n{path}\n\n{self.project.asr_extract}")
+        self.project_tab.set_asr_extract(self.project.asr_extract)
