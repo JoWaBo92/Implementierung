@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "project_id": "721306a2-d7e1-4241-b14f-8a540a3a6649",
+  "title": "",
+  "description": "",
+  "modified_at": "2026-01-24T16:50:33.115599+00:00",
+  "pipeline": null,
+  "preprocessing_results": [],
+  "deviation_analysis_results": [],
+  "alignment_results": [],
+  "sources": {
+    "transcript": null,
+    "asr_extract": null
+  }
+}

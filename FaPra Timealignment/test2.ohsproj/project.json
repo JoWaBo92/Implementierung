@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "project_id": "e310599f-d486-4cc1-baf4-45d15537e005",
+  "title": "",
+  "description": "",
+  "modified_at": "2026-01-24T17:22:08.195532+00:00",
+  "pipeline": null,
+  "preprocessing_results": [],
+  "deviation_analysis_results": [],
+  "alignment_results": [],
+  "sources": {
+    "transcript": {
+      "path": "assets\\transcript.odt",
+      "original_path": "G:\\Meine Ablage\\Studium\\Praktikum NLP-IER\\Implementierung\\FaPra Timealignment\\FaPra Timealignment\\ADG3149_01_01.odt"
+    },
+    "asr_extract": {
+      "path": "assets\\asr_extract.odt",
+      "original_path": "G:\\Meine Ablage\\Studium\\Praktikum NLP-IER\\Implementierung\\FaPra Timealignment\\FaPra Timealignment\\ADG3149_01_01.odt"
+    }
+  }
+}
