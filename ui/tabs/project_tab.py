@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
-    QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
+    QSplitter, QGroupBox
 )
 from PyQt5.QtCore import Qt
 
@@ -11,33 +12,65 @@ class ProjectTab(QWidget):
 
         self.project = project
 
-        self.editor = QTextEdit()
-        self.editor.setPlaceholderText("")
+
+
+        root = QHBoxLayout(self)
+        self.splitter_main = QSplitter(Qt.Vertical, self)
+
+        # Top half
+        self.top_splitter = QSplitter(Qt.Horizontal, self.splitter_main)
+
+        self.transcript_box = self._build_transcript_box()
+        self.asr_box = self._build_asr_box()
+
+        self.top_splitter.addWidget(self.transcript_box)
+        self.top_splitter.addWidget(self.asr_box)
+
+        # Bottom half
+        self.log_box = self._build_log_box()
+
+        # Combine halfs
+        self.splitter_main.addWidget(self.top_splitter)
+        self.splitter_main.addWidget(self.log_box)
+
+        root.addWidget(self.splitter_main)
+        print("ProjectTab built")
+
+    def _build_transcript_box(self) -> QGroupBox:
+        box = QGroupBox("Transcript")
+        layout = QVBoxLayout(box)
 
         self.table_transcript = QTableWidget(0, 3)
         self.table_transcript.setHorizontalHeaderLabels(["Index", "Speaker", "Text"])
-        self._configure_table(self.table_transcript, fixed_height=220)
+        self._configure_table(self.table_transcript)
+
+        self.table_transcript.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+
+        layout.addWidget(self.table_transcript)
+        return box
+    
+    def _build_asr_box(self) -> QGroupBox:
+        box = QGroupBox("ASR-Extract")
+        layout = QVBoxLayout(box)
 
         self.table_asr = QTableWidget(0, 2)
-        self.table_asr.setHorizontalHeaderLabels(["Time", "Segment"])
-        self._configure_table(self.table_asr, fixed_height=220)
+        self.table_asr.setHorizontalHeaderLabels(["Time", "Segments"])
+        self._configure_table(self.table_asr)
 
-        left = QVBoxLayout()
-        left.addWidget(QLabel("Transcript"))
-        left.addWidget(self.table_transcript)
+        self.table_asr.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
 
-        right = QVBoxLayout()
-        right.addWidget(QLabel("ASR-Extract"))
-        right.addWidget(self.table_asr)
+        layout.addWidget(self.table_asr)
+        return box
+    
+    def _build_log_box(self) -> QGroupBox:
+        box = QGroupBox("Projekt / Log")
+        layout = QVBoxLayout(box)
 
-        tables_row = QHBoxLayout()
-        tables_row.addLayout(left, 1)
-        tables_row.addLayout(right, 1)
+        self.editor = QTextEdit()
+        self.editor.setPlaceholderText("")
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(tables_row)
-        layout.addWidget(QLabel("Projekt / Log"))
         layout.addWidget(self.editor)
+        return box
 
     # ---------- Getters/Setters ----------
     def set_log_text(self, text: str):
@@ -50,10 +83,7 @@ class ProjectTab(QWidget):
         self._fill_asr_table(extract)
 
     # ---------- Internal helpers ----------
-    def _configure_table(self, table: QTableWidget, fixed_height: int):
-        table.setMinimumHeight(fixed_height)
-        table.setMaximumHeight(fixed_height)
-
+    def _configure_table(self, table: QTableWidget):
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setSelectionMode(QAbstractItemView.SingleSelection)
