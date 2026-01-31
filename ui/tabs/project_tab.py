@@ -5,14 +5,14 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
+from domain.project import Project
+
 
 class ProjectTab(QWidget):
-    def __init__(self, project, parent=None):
+    def __init__(self, project: Project, parent=None):
         super().__init__(parent)
 
         self.project = project
-
-
 
         root = QHBoxLayout(self)
         self.splitter_main = QSplitter(Qt.Vertical, self)
@@ -34,7 +34,6 @@ class ProjectTab(QWidget):
         self.splitter_main.addWidget(self.log_box)
 
         root.addWidget(self.splitter_main)
-        print("ProjectTab built")
 
     def _build_transcript_box(self) -> QGroupBox:
         box = QGroupBox("Transcript")
@@ -75,6 +74,11 @@ class ProjectTab(QWidget):
     # ---------- Getters/Setters ----------
     def set_log_text(self, text: str):
         self.editor.setPlainText(text)
+
+    def set_project(self, project: Project):
+        self.project = project
+        self.set_transcript(project.transcript)
+        self.set_asr_extract(project.asr_extract)
 
     def set_transcript(self, transcript):
         self._fill_transcript_table(transcript)

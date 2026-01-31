@@ -25,29 +25,22 @@ class Token:
                 f"is_stop={self.is_stop}, is_punct={self.is_punct}, "
                 f"start_char={self.start_char}, end_char={self.end_char})")
 
+class PreprocessingResult:
+    def __init__(self):
+        self.raw_text: str = ""
+        self.clean_text: str = ""
+        self.tokens: List[Token] = []
+
 class PipelineStage(ABC):
     @abstractmethod
-    def apply(self, text, nlp):
+    def apply(self, result, nlp):
         pass
 
-class TokenizationStage(PipelineStage):
-    def apply(self, text, nlp):
-        doc = nlp(text)
-        
-        tokens: List[Token] = []
-        for t in doc:
-            if t.is_space:
-                continue
-            if t.is_punct:
-                continue
-            token = Token(text=t.text,lemma=t.lemma_,pos=t.pos_,is_stop=bool(t.is_stop),
-                    is_punct=bool(t.is_punct),start_char=int(t.idx),end_char=int(t.idx + len(t.text)))
-            tokens.append(token)
-
-        return tokens
 
 class NormalizationStage(PipelineStage):
-    def apply(self, text, nlp):
+    def apply(self, result: PreprocessingResult, nlp):
+
+        text = result.raw_text
 
         # Normalize unicode
         s = unicodedata.normalize("NFC", text)
@@ -59,28 +52,48 @@ class NormalizationStage(PipelineStage):
         # Convert to lower case
         s = s.lower()
 
-        return s
+        result.clean_text = s
+
+        return result
+
+class TokenizationStage(PipelineStage):
+    def apply(self, result: PreprocessingResult, nlp):
+        doc = nlp(result.clean_text)
+        
+        for t in doc:
+            if t.is_space:
+                continue
+            if t.is_punct:
+                continue
+            token = Token(text=t.text,lemma=t.lemma_,pos=t.pos_,is_stop=bool(t.is_stop),
+                    is_punct=bool(t.is_punct),start_char=int(t.idx),end_char=int(t.idx + len(t.text)))
+            result.tokens.append(token)
+
+        return result
 
 class PreprocessingConfig:
     def __init__(self, spacy_model: str = "de_core_news_md") -> None:
         self.spacy_model = spacy_model
 
 class PreprocessingPipeline:
-    def __init__(self, config: PreprocessingConfig = PreprocessingConfig(), stages: List[PipelineStage] = None):
+    def __init__(self, config: PreprocessingConfig = PreprocessingConfig(), stages: List[PipelineStage] = [NormalizationStage(), TokenizationStage()]):
         self.config = config
         self.stages = stages
         self.nlp = spacy.load(config.spacy_model)
 
     def run(self, segment):
-        text = segment.text
+        result = PreprocessingResult()
+        result.raw_text = segment.text
         for stage in self.stages:
-            text = stage.apply(text, self.nlp)
-        return text
+            result = stage.apply(result, self.nlp)
+        return result
+    
+    def run_batch(self, segments):
+        results = []
+        for s in segments:
+            results.append(self.run(s))
+        return results
 
-
-
-class PreprocessingResult:
-    pass
 
 if __name__ == "__main__":
     extract = ASRExtract("FaPra Timealignment\ADG3149_01_01_de_speaker.csv")
@@ -92,12 +105,6 @@ if __name__ == "__main__":
 
     print(extract.segments[0].text)
 
-    norm_res = norm.apply(extract.segments[0].text, nlp)
-    tk_res = tk.apply(norm_res, nlp)
-
-    print(norm_res)
-
     print("Test")
     pipe = PreprocessingPipeline(stages=[norm, tk])
-    test_res = pipe.run(extract.segments[0])
-    print([f"{t}" for t in test_res])
+    test_res = pipe.run_batch(extract.segments)

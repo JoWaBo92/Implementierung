@@ -5,6 +5,7 @@ from persistence.project_repository import save_project, load_project
 
 from ui.actions import AppActions
 from ui.tabs.project_tab import ProjectTab
+from ui.tabs.preprocessing_tab import PreprocessingTab
 
 from domain.source_document import ASRExtract, ManualTranscript
 from domain.project import Project
@@ -71,19 +72,19 @@ class MainWindow(QMainWindow):
     def _create_tabs(self):
         self.tabs = QTabWidget()
 
-        self.project_tab = ProjectTab(self.project)
-        self.tab_preprocessing = QWidget()
+        self.tab_project = ProjectTab(project=self.project, parent=self)
+        self.tab_preprocessing = PreprocessingTab(project=self.project, parent=self)
         self.tab_deviation = QWidget()
         self.tab_alignment = QWidget()
 
-        self.tabs.addTab(self.project_tab, "Projekt")
+        self.tabs.addTab(self.tab_project, "Projekt")
         self.tabs.addTab(self.tab_preprocessing, "Preprocessing")
         self.tabs.addTab(self.tab_deviation, "Abweichungsuntersuchung")
         self.tabs.addTab(self.tab_alignment, "Synchronisierung")
 
         self.setCentralWidget(self.tabs)
 
-    # ---------- Internal helpers ----------
+    # ---------- Internal helpers -----------
     def _pick_file(self, title: str, filter_str: str = "Alle Dateien (*.*)"):
         path, _ = QFileDialog.getOpenFileName(self, title, "", filter_str)
         return path
@@ -91,7 +92,7 @@ class MainWindow(QMainWindow):
     def _show_error(self, title: str, message: str):
         QMessageBox.critical(self, title, message)
 
-    # ---------- Functions ----------
+    # ---------- Event Handlers -------------
     def on_load_project(self):
         project_dir = QFileDialog.getExistingDirectory(self, "Projekt öffnen", "", QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
         if not project_dir:
@@ -104,12 +105,11 @@ class MainWindow(QMainWindow):
             self._show_error("Fehler", f"Projekt konnte nicht geladen werden:\n{e}")
             return
 
-        self.project_tab.set_transcript(self.project.transcript)
-        self.project_tab.set_asr_extract(self.project.asr_extract)
+        self.tab_project.set_project(self.project)
+        self.tab_preprocessing.set_project(self.project)
 
         self.statusBar().showMessage(f"Projekt geladen: {project_dir}")
-        self.project_tab.set_log_text(f"Projektdatei:\n{project_dir}")
-        print(self.project.transcript)
+        self.tab_project.set_log_text(f"Projektdatei:\n{project_dir}")
 
     def on_save_project(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Projekt speichern unter", "", "Oral History Project (*.ohsproj)")
@@ -130,8 +130,8 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(f"Transkript geladen: {path}")
-        self.project_tab.set_log_text(f"ranskript geladen:\n{path}")
-        self.project_tab.set_transcript(self.project.transcript)
+        self.tab_project.set_log_text(f"ranskript geladen:\n{path}")
+        self.tab_project.set_transcript(self.project.transcript)
 
     def on_load_asr_extract(self):
         path = self._pick_file("ASR-Extrakt laden", "CSV (*.csv);;Alle Dateien (*.*)")
@@ -145,5 +145,5 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(f"ASR-Extrakt geladen: {path}")
-        self.project_tab.set_log_text(f"ASR-Extrakt geladen:\n{path}")
-        self.project_tab.set_asr_extract(self.project.asr_extract)
+        self.tab_project.set_log_text(f"ASR-Extrakt geladen:\n{path}")
+        self.tab_project.set_asr_extract(self.project.asr_extract)
