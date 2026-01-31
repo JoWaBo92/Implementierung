@@ -8,6 +8,17 @@ from spacy.language import Language
 
 from domain.source_document import ASRExtract, ManualTranscript
 
+class PreprocessingConfig:
+    def __init__(self, spacy_model: str = "de_core_news_md") -> None:
+        self.spacy_model = spacy_model
+
+    def to_dict(self):
+        return {"spacy_model": self.spacy_model}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PreprocessingConfig":
+        return cls(spacy_model=d.get("spacy_model", "de_core_news_md"))
+
 class Token:
     def __init__(self, text: str, lemma: str, pos: str,
                  is_stop: bool, is_punct: bool,
@@ -20,6 +31,21 @@ class Token:
         self.start_char = start_char
         self.end_char = end_char
 
+    def to_dict(self):
+        return {
+            "text": self.text,
+            "lemma": self.lemma,
+            "pos": self.pos,
+            "is_stop": self.is_stop,
+            "is_punct": self.is_punct,
+            "start_char": self.start_char,
+            "end_char": self.end_char,
+        }
+    
+    @classmethod
+    def from_dict(cls, d: dict) -> "Token":
+        return cls(**d)
+
     def __str__(self):
         return (f"Token(text='{self.text}', lemma='{self.lemma}', pos={self.pos}, "
                 f"is_stop={self.is_stop}, is_punct={self.is_punct}, "
@@ -30,6 +56,21 @@ class PreprocessingResult:
         self.raw_text: str = ""
         self.clean_text: str = ""
         self.tokens: List[Token] = []
+
+    def to_dict(self):
+        return {
+            "raw_text": self.raw_text,
+            "clean_text": self.clean_text,
+            "tokens": [t.to_dict() for t in self.tokens],
+        }
+    
+    @classmethod
+    def from_dict(cls, d: dict) -> "PreprocessingResult":
+        obj = cls()
+        obj.raw_text = d.get("raw_text", "")
+        obj.clean_text = d.get("clean_text", "")
+        obj.tokens = [Token.from_dict(td) for td in d.get("tokens", [])]
+        return obj
 
 class PipelineStage(ABC):
     @abstractmethod
@@ -70,10 +111,6 @@ class TokenizationStage(PipelineStage):
             result.tokens.append(token)
 
         return result
-
-class PreprocessingConfig:
-    def __init__(self, spacy_model: str = "de_core_news_md") -> None:
-        self.spacy_model = spacy_model
 
 class PreprocessingPipeline:
     def __init__(self, config: PreprocessingConfig = PreprocessingConfig(), stages: List[PipelineStage] = [NormalizationStage(), TokenizationStage()]):
