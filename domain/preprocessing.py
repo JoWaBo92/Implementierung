@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Sequence
 from abc import ABC, abstractmethod
 import unicodedata
 import re
@@ -9,8 +9,10 @@ from spacy.language import Language
 from domain.source_document import ASRExtract, ManualTranscript
 
 class PreprocessingConfig:
-    def __init__(self, spacy_model: str = "de_core_news_md") -> None:
+    def __init__(self, spacy_model: str = "de_core_news_md", lowercase: bool = False, keep_punct: bool = True) -> None:
         self.spacy_model = spacy_model
+        self.lowercase = lowercase
+        self.keep_punct = keep_punct
 
     def to_dict(self):
         return {"spacy_model": self.spacy_model}
@@ -74,12 +76,12 @@ class PreprocessingResult:
 
 class PipelineStage(ABC):
     @abstractmethod
-    def apply(self, result, nlp):
+    def apply(self, result, config, nlp):
         pass
 
 
 class NormalizationStage(PipelineStage):
-    def apply(self, result: PreprocessingResult, nlp):
+    def apply(self, result: PreprocessingResult, config: PreprocessingConfig, nlp):
 
         text = result.raw_text
 
@@ -91,20 +93,22 @@ class NormalizationStage(PipelineStage):
         s = re.sub(r"\s+", " ", s).strip()
 
         # Convert to lower case
-        s = s.lower()
+        if config.lowercase:
+            s = s.lower()
 
         result.clean_text = s
 
         return result
 
 class TokenizationStage(PipelineStage):
-    def apply(self, result: PreprocessingResult, nlp):
+    def apply(self, result: PreprocessingResult, config: PreprocessingConfig, nlp):
+        result.tokens = []
         doc = nlp(result.clean_text)
         
         for t in doc:
             if t.is_space:
                 continue
-            if t.is_punct:
+            if (not config.keep_punct) and t.is_punct:
                 continue
             token = Token(text=t.text,lemma=t.lemma_,pos=t.pos_,is_stop=bool(t.is_stop),
                     is_punct=bool(t.is_punct),start_char=int(t.idx),end_char=int(t.idx + len(t.text)))
@@ -113,16 +117,16 @@ class TokenizationStage(PipelineStage):
         return result
 
 class PreprocessingPipeline:
-    def __init__(self, config: PreprocessingConfig = PreprocessingConfig(), stages: List[PipelineStage] = [NormalizationStage(), TokenizationStage()]):
-        self.config = config
-        self.stages = stages
-        self.nlp = spacy.load(config.spacy_model)
+    def __init__(self,config: Optional[PreprocessingConfig] = None,stages: Optional[Sequence[PipelineStage]] = None):
+        self.config = config or PreprocessingConfig()
+        self.stages = list(stages) if stages is not None else [NormalizationStage(), TokenizationStage()]
+        self.nlp = spacy.load(self.config.spacy_model)
 
     def run(self, segment):
         result = PreprocessingResult()
         result.raw_text = segment.text
         for stage in self.stages:
-            result = stage.apply(result, self.nlp)
+            result = stage.apply(result=result, config=self.config, nlp=self.nlp)
         return result
     
     def run_batch(self, segments):
