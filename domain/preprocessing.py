@@ -22,16 +22,15 @@ class PreprocessingConfig:
         return cls(spacy_model=d.get("spacy_model", "de_core_news_md"))
 
 class Token:
-    def __init__(self, text: str, lemma: str, pos: str,
-                 is_stop: bool, is_punct: bool,
-                 start_char: int, end_char: int):
-        self.text = text
-        self.lemma = lemma
-        self.pos = pos
-        self.is_stop = is_stop
-        self.is_punct = is_punct
-        self.start_char = start_char
-        self.end_char = end_char
+    def __init__(self, t:spacy.tokens.token.Token):
+        self.spacy_token: spacy.tokens.token.Token = t
+        self.text: str = t.text
+        self.lemma = t.lemma
+        self.pos = t.pos
+        self.is_stop: bool = bool(t.is_stop)
+        self.is_punct: bool = bool(t.is_punct)
+        self.start_char: int = int(t.idx)
+        self.end_char: int = int(t.idx + len(t.text))
 
     def to_dict(self):
         return {
@@ -58,6 +57,8 @@ class PreprocessingResult:
         self.raw_text: str = ""
         self.clean_text: str = ""
         self.tokens: List[Token] = []
+        self.config = None
+        self.doc = None
 
     def to_dict(self):
         return {
@@ -104,14 +105,14 @@ class TokenizationStage(PipelineStage):
     def apply(self, result: PreprocessingResult, config: PreprocessingConfig, nlp):
         result.tokens = []
         doc = nlp(result.clean_text)
+        result.doc = doc
         
         for t in doc:
             if t.is_space:
                 continue
             if (not config.keep_punct) and t.is_punct:
                 continue
-            token = Token(text=t.text,lemma=t.lemma_,pos=t.pos_,is_stop=bool(t.is_stop),
-                    is_punct=bool(t.is_punct),start_char=int(t.idx),end_char=int(t.idx + len(t.text)))
+            token = Token(t)
             result.tokens.append(token)
 
         return result
@@ -122,14 +123,14 @@ class PreprocessingPipeline:
         self.stages = list(stages) if stages is not None else [NormalizationStage(), TokenizationStage()]
         self.nlp = spacy.load(self.config.spacy_model)
 
-    def run(self, segment):
+    def run(self, segment) -> PreprocessingResult:
         result = PreprocessingResult()
         result.raw_text = segment.text
         for stage in self.stages:
             result = stage.apply(result=result, config=self.config, nlp=self.nlp)
         return result
     
-    def run_batch(self, segments):
+    def run_batch(self, segments) -> List[PreprocessingResult]:
         results = []
         for s in segments:
             results.append(self.run(s))
