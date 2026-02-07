@@ -3,13 +3,15 @@ from odf.opendocument import load
 from odf import text as odf_text
 from odf import teletype
 
+from typing import List
+
 class SourceDocument:
     def __init__(self, file_name):
         self.file_name = file_name
-        self.segments = []
+        self.segments: List[TranscriptSegment] = []
 
 class ManualTranscript(SourceDocument):
-    def __init__(self, file_name):
+    def __init__(self, file_name, seperate_sentences = True):
         super().__init__(file_name)
 
         doc = load(file_name)
@@ -22,8 +24,15 @@ class ManualTranscript(SourceDocument):
                 continue
 
             speaker, text = s.split(" ", 1)
-            self.segments.append(TranscriptSegment(text, speaker, inx))
-            inx += 1
+            if seperate_sentences:
+                sentences = text.split(".")
+                for sent in sentences:
+                    if len(sent) > 0 and sent != " ":
+                        self.segments.append(TranscriptSegment(sent, speaker, inx))
+                        inx += 1
+            else:
+                self.segments.append(TranscriptSegment(text, speaker, inx))
+                inx += 1
 
     def __str__(self):
         lines = [f"{self.segments[i]}" for i in range(len(self.segments))]

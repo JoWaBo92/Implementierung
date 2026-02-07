@@ -10,9 +10,9 @@ from domain.source_document import ASRExtract, ManualTranscript
 
 class PreprocessingConfig:
     def __init__(self, spacy_model: str = "de_core_news_md", lowercase: bool = False, keep_punct: bool = True) -> None:
-        self.spacy_model = spacy_model
-        self.lowercase = lowercase
-        self.keep_punct = keep_punct
+        self.spacy_model: str = spacy_model
+        self.lowercase: bool = lowercase
+        self.keep_punct: bool = keep_punct
 
     def to_dict(self):
         return {"spacy_model": self.spacy_model}

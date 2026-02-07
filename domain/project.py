@@ -1,7 +1,9 @@
 import uuid
 
+from dataclasses import dataclass
+
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from domain.preprocessing import PreprocessingConfig, PreprocessingResult
 from domain.source_document import ManualTranscript, ASRExtract
@@ -32,15 +34,20 @@ class PreprocessingResultCollection:
         obj.transcript_results = [PreprocessingResult.from_dict(x) for x in d.get("transcript_results", [])]
         obj.extract_results = [PreprocessingResult.from_dict(x) for x in d.get("extract_results", [])]
         return obj
+    
+@dataclass
+class ProjectCurrentState:
+    preprocessing: Optional[PreprocessingResultCollection] = None
 
 class Project:
     def __init__(self, title: str = "", description: str = "", transcript: ManualTranscript = None, asr_extract: ASRExtract = None):
         self.project_id = uuid.uuid4()
-        self.title = title
-        self.description = description
-        self.transcript = transcript
-        self.asr_extract = asr_extract
+        self.title: str = title
+        self.description: str = description
+        self.transcript: ManualTranscript = transcript
+        self.asr_extract: ASRExtract = asr_extract
         self.preprocessing_results: List[PreprocessingResultCollection] = []
+        self.current = ProjectCurrentState()
         # self.deviation_analysis_results = []
         # self.alignment_results = []
 

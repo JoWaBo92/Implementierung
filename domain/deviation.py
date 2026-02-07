@@ -13,6 +13,8 @@ from torch.nn.functional import cosine_similarity
 import spacy
 from spacy.tokens import Doc
 
+from typing import Iterable
+
 from sentence_transformers import SentenceTransformer, util
 
 from domain.source_document import ASRExtract, ManualTranscript
@@ -25,10 +27,18 @@ class DeviationMethod(Enum):
     SENT_TRF = "Sentence_Transformer"
 
 
-@dataclass(frozen=True)
 class DeviationAnalysisConfig:
-    library: str
-    method: DeviationMethod = DeviationMethod.STANDARD
+    def __init__(
+        self,
+        library: str,
+        method: DeviationMethod = DeviationMethod.STANDARD,
+        similar_length: bool = False,
+        similar_position: bool = False
+    ):
+        self.library = library
+        self.method = method
+        self.similar_length = similar_length
+        self.similar_position = similar_position
 
 
 class DeviationCalculator:
@@ -50,6 +60,53 @@ class DeviationCalculator:
                 return SentenceTransformer(config.library, device=device)
             return SentenceTransformer(config.library)
         raise ValueError(f"Unknown method: {config.method}")
+    
+
+    # ---------- Calculate whole similarity matrix ----------
+
+    def similarity_matrix(self, items_a: Sequence[Any], items_b: Sequence[Any]) -> np.ndarray:
+        if self.config.method == DeviationMethod.SENT_TRF:
+            model = self._require_sentence_transformer()
+
+            texts_a = [self._as_text(x) for x in items_a]
+            texts_b = [self._as_text(x) for x in items_b]
+
+            emb_a = model.encode(texts_a, convert_to_tensor=True, normalize_embeddings=True)
+            emb_b = model.encode(texts_b, convert_to_tensor=True, normalize_embeddings=True)
+
+            sim = util.cos_sim(emb_a, emb_b)
+            return sim.cpu().numpy()
+
+        elif self.config.method == DeviationMethod.STANDARD:
+            docs_a = [self._as_doc(x) for x in items_a]
+            docs_b = [self._as_doc(x) for x in items_b]
+
+            A = np.vstack([d.vector for d in docs_a]).astype(np.float32)
+            B = np.vstack([d.vector for d in docs_b]).astype(np.float32)
+
+            A = self._l2_normalize_np(A)
+            B = self._l2_normalize_np(B)
+
+            return A @ B.T
+
+        elif self.config.method == DeviationMethod.TRF:
+            docs_a = [self._as_doc(x) for x in items_a]
+            docs_b = [self._as_doc(x) for x in items_b]
+
+            EA = self._docs_trf_embeddings_mean(docs_a)  # Tensor (len(a), dim)
+            EB = self._docs_trf_embeddings_mean(docs_b)  # Tensor (len(b), dim)
+
+            EA = torch.nn.functional.normalize(EA, p=2, dim=1)
+            EB = torch.nn.functional.normalize(EB, p=2, dim=1)
+
+            sim = EA @ EB.T
+            return sim.cpu().numpy()
+
+        else:
+            raise ValueError(f"Unknown method: {self.config.method}")
+
+
+    # ---------- Calculate similarity between single values ----------
 
     def similarity(self, a: Union[str, Doc], b: Union[str, Doc]) -> float:
         if self.config.method == DeviationMethod.SENT_TRF:
@@ -59,15 +116,11 @@ class DeviationCalculator:
         else:  # STANDARD
             return float(self._sim_spacy_standard(a, b))
 
-    # ---------- STANDARD (spaCy vectors) ----------
-
     def _sim_spacy_standard(self, a: Union[str, Doc], b: Union[str, Doc]) -> float:
         nlp = self._require_spacy()
         doc1 = a if isinstance(a, Doc) else nlp(a)
         doc2 = b if isinstance(b, Doc) else nlp(b)
         return doc1.similarity(doc2)
-
-    # ---------- TRF (spaCy transformer embeddings) ----------
 
     def _sim_spacy_trf(self, a: Union[str, Doc], b: Union[str, Doc]) -> float:
         nlp = self._require_spacy()
@@ -78,6 +131,20 @@ class DeviationCalculator:
         v2 = self._doc_embedding_mean(doc2)  # Tensor (dim,)
 
         return cosine_similarity(v1, v2, dim=0).item()
+    
+    def _sim_sentence_transformer(self, a: Union[str, Doc], b: Union[str, Doc]) -> float:
+        model = self._require_sentence_transformer()
+
+        s1 = a.text if isinstance(a, Doc) else a
+        s2 = b.text if isinstance(b, Doc) else b
+        if not isinstance(s1, str) or not isinstance(s2, str):
+            raise TypeError("SENT_TRF expects strings or spaCy Docs (Doc.text).")
+
+        emb = model.encode([s1, s2], convert_to_tensor=True)  # Tensor (2, dim)
+        return util.cos_sim(emb[0], emb[1]).item()
+    
+
+    # ---------- Helper functions ----------
 
     def _doc_embedding_mean(self, doc: Doc) -> torch.Tensor:
         if not hasattr(doc._, "trf_data") or doc._.trf_data is None:
@@ -93,19 +160,46 @@ class DeviationCalculator:
 
         t = torch.as_tensor(seq)  # (tokens, dim)
         return t.mean(dim=0)      # (dim,)
+    
+    @staticmethod
+    def _l2_normalize_np(x: np.ndarray, eps: float = 1e-12) -> np.ndarray:
+        denom = np.linalg.norm(x, axis=1, keepdims=True)
+        denom = np.maximum(denom, eps)
+        return x / denom
+    
 
-    # ---------- SentenceTransformer ----------
+    def _docs_trf_embeddings_mean(self, docs: Sequence[Doc]) -> torch.Tensor:
+        embs = [self._doc_embedding_mean(d) for d in docs]  # list[Tensor (dim,)]
+        return torch.stack(embs, dim=0)  # Tensor (n_docs, dim)
+    
 
-    def _sim_sentence_transformer(self, a: Union[str, Doc], b: Union[str, Doc]) -> float:
-        model = self._require_sentence_transformer()
+    def _as_doc(self, x: Any) -> Doc:
+        if isinstance(x, Doc):
+            return x
+        
+        doc = getattr(x, "doc", None)
+        if isinstance(doc, Doc):
+            return doc
+        raise TypeError("Expected spaCy Doc or an object with attribute .doc (spaCy Doc).")
+    
 
-        s1 = a.text if isinstance(a, Doc) else a
-        s2 = b.text if isinstance(b, Doc) else b
-        if not isinstance(s1, str) or not isinstance(s2, str):
-            raise TypeError("SENT_TRF expects strings or spaCy Docs (Doc.text).")
-
-        emb = model.encode([s1, s2], convert_to_tensor=True)  # Tensor (2, dim)
-        return util.cos_sim(emb[0], emb[1]).item()
+    def _as_text(self, x: Any) -> str:
+        if isinstance(x, str):
+            return x
+        if isinstance(x, Doc):
+            return x.text
+        
+        raw = getattr(x, "raw_text", None)
+        if isinstance(raw, str):
+            return raw
+        clean = getattr(x, "clean_text", None)
+        if isinstance(clean, str):
+            return clean
+        doc = getattr(x, "doc", None)
+        if isinstance(doc, Doc):
+            return doc.text
+        raise TypeError("Expected str/Doc or an object with raw_text/clean_text/doc.")
+    
 
     # ---------- backend helpers ----------
 
@@ -117,22 +211,11 @@ class DeviationCalculator:
             raise TypeError("Backend is not spaCy.")
         return self.backend
 
+
     def _require_sentence_transformer(self):
         if not isinstance(self.backend, SentenceTransformer):
             raise TypeError("Backend is not SentenceTransformer.")
         return self.backend
-    
-    def similarity_matrix(self, texts_a: list[str], texts_b: list[str]) -> np.ndarray:
-        if self.config.method != DeviationMethod.SENT_TRF:
-            raise ValueError("similarity_matrix ist hier nur für SENT_TRF implementiert.")
-
-        model = self._require_sentence_transformer()
-
-        emb_a = model.encode(texts_a, convert_to_tensor=True, normalize_embeddings=True)
-        emb_b = model.encode(texts_b, convert_to_tensor=True, normalize_embeddings=True)
-
-        sim = util.cos_sim(emb_a, emb_b)  # Tensor
-        return sim.cpu().numpy()
 
 
 
@@ -155,16 +238,16 @@ if __name__ == "__main__":
     transcript = ManualTranscript("FaPra Timealignment\ADG3149_01_01.odt")
     print("Source documents loaded")
 
-    pipe = PreprocessingPipeline()
-    # pipe = PreprocessingPipeline(config=PreprocessingConfig(spacy_model="de_dep_news_trf"))
+    # pipe = PreprocessingPipeline()
+    pipe = PreprocessingPipeline(config=PreprocessingConfig(spacy_model="de_dep_news_trf"))
 
     pre_extract = pipe.run_batch(extract.segments)
     pre_transcript = pipe.run_batch(transcript.segments)
     print("Source documents preprocessed")
 
     # calc = DeviationCalculator(DeviationAnalysisConfig("de_core_news_md", DeviationMethod.STANDARD))
-    # calc = DeviationCalculator(DeviationAnalysisConfig("de_dep_news_trf", DeviationMethod.TRF))
-    calc = DeviationCalculator(DeviationAnalysisConfig("paraphrase-multilingual-MiniLM-L12-v2", DeviationMethod.SENT_TRF))
+    calc = DeviationCalculator(DeviationAnalysisConfig("de_dep_news_trf", DeviationMethod.TRF))
+    # calc = DeviationCalculator(DeviationAnalysisConfig("paraphrase-multilingual-MiniLM-L12-v2", DeviationMethod.SENT_TRF))
 
 
     #result_table = []
@@ -176,24 +259,15 @@ if __name__ == "__main__":
     #    print(f"{r} of {len(pre_extract)} done.")
     #    result_table.append(row)
 
-    texts_a = [r.raw_text for r in pre_extract]
-    texts_b = [r.raw_text for r in pre_transcript]
+    texts_a = [r.doc for r in pre_extract]
+    texts_b = [r.doc for r in pre_transcript]
 
     result_table = calc.similarity_matrix(texts_a, texts_b)  # numpy array
 
+    ref_sim = calc.similarity(pre_transcript[0].doc, pre_extract[0].doc)
+
     plot_similarity_matrix(result_table)
 
-    
-
-    # pre_extract_trf = pipe_trf.run(extract.segments[0])
-    # pre_transcript_trf = pipe_trf.run(transcript.segments[0])
-
-    # trf_config = DeviationAnalysisConfig("de_dep_news_trf", DeviationMethod.TRF)
-    # dev_trf = Deviation(trf_config, pre_extract_trf.doc, pre_transcript_trf.doc)
-    # print(dev_trf.deviation)
-
-    # sent_trf_config = DeviationAnalysisConfig("paraphrase-multilingual-MiniLM-L12-v2", DeviationMethod.SENT_TRF)
-    # dev_sent_trf = Deviation(sent_trf_config, extract.segments[0].text, transcript.segments[1].text)
-    # print(dev_sent_trf.deviation)
+    print(ref_sim, result_table[0][0])
 
     # 0.43596245238900666, nan, tensor([[0.0398]])
