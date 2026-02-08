@@ -226,6 +226,10 @@ class PreprocessingTab(QWidget):
         self.combo_language_model.blockSignals(False)
 
     # ----------- Event handlers --------------
+
+    def on_tab_activated(self):
+        self._fill_combo_language_model()
+
     def _on_click_run(self):
         if not self.combo_language_model.isEnabled():
             QMessageBox.warning(self, "Kein spaCy-Modell installiert.", 
@@ -253,11 +257,11 @@ class PreprocessingTab(QWidget):
         pre_result_transcript = pipe.run_batch(self.project.transcript.segments)
         pre_result_extract = pipe.run_batch(self.project.asr_extract.segments)
 
-        result_collection = PreprocessingResultCollection()
-        result_collection.config = pipe.config
+        result_collection = PreprocessingResultCollection(config=pipe_config)
         result_collection.transcript_results = pre_result_transcript
         result_collection.extract_results = pre_result_extract
         self.project.preprocessing_results.append(result_collection)
+        self.project.current.preprocessing = result_collection
 
         self._fill_result_table(self.table_transcript_result, pre_result_transcript)
         self._fill_result_table(self.table_extract_result, pre_result_extract)
@@ -270,6 +274,7 @@ class PreprocessingTab(QWidget):
         if not rows:
             return
         self._show_history_index(rows[0].row())
+        self.project.current.preprocessing = self.project.preprocessing_results[rows[0].row()]
 
     def _show_history_index(self, row: int):
         if not self.project or not getattr(self.project, "preprocessing_results", None):

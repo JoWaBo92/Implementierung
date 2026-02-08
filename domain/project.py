@@ -2,9 +2,14 @@ import uuid
 
 from dataclasses import dataclass
 
+import numpy as np
+
+from spacy.tokens import Doc
+
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from domain.deviation import DeviationAnalysisConfig
 from domain.preprocessing import PreprocessingConfig, PreprocessingResult
 from domain.source_document import ManualTranscript, ASRExtract
 
@@ -13,10 +18,9 @@ class PreprocessingResultCollection:
         self.time = datetime.now()
         self.transcript_results: List[PreprocessingResult] = []
         self.extract_results: List[PreprocessingResult] = []
-        self.config = config
+        self.config: PreprocessingConfig = config
 
     def to_dict(self):
-        print("Type:", type(self.config))
         return {
             "time": self.time.isoformat(), 
             "transcript_results": [r.to_dict() for r in self.transcript_results],
@@ -35,9 +39,18 @@ class PreprocessingResultCollection:
         obj.extract_results = [PreprocessingResult.from_dict(x) for x in d.get("extract_results", [])]
         return obj
     
+class DeviationResultCollection:
+    def __init__(self, config = DeviationAnalysisConfig()):
+        self.time = datetime.now()
+        self.config: DeviationAnalysisConfig = config
+        self.transcript_docs: List[Doc] = []
+        self.extract_docs: List[Doc] = []
+        self.result_matrix: np.ndarray = None
+
 @dataclass
 class ProjectCurrentState:
     preprocessing: Optional[PreprocessingResultCollection] = None
+    deviation_analysis: Optional[DeviationResultCollection] = None
 
 class Project:
     def __init__(self, title: str = "", description: str = "", transcript: ManualTranscript = None, asr_extract: ASRExtract = None):
@@ -47,8 +60,8 @@ class Project:
         self.transcript: ManualTranscript = transcript
         self.asr_extract: ASRExtract = asr_extract
         self.preprocessing_results: List[PreprocessingResultCollection] = []
-        self.current = ProjectCurrentState()
-        # self.deviation_analysis_results = []
+        self.current:ProjectCurrentState = ProjectCurrentState()
+        self.deviation_analysis_results: List[DeviationResultCollection] = []
         # self.alignment_results = []
 
     def to_dict(self):

@@ -6,6 +6,7 @@ from persistence.project_repository import save_project, load_project
 from ui.actions import AppActions
 from ui.tabs.project_tab import ProjectTab
 from ui.tabs.preprocessing_tab import PreprocessingTab
+from ui.tabs.deviation_tab import DeviationTab
 
 from domain.source_document import ASRExtract, ManualTranscript
 from domain.project import Project
@@ -71,10 +72,11 @@ class MainWindow(QMainWindow):
 
     def _create_tabs(self):
         self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(self.on_tab_changed)
 
         self.tab_project = ProjectTab(project=self.project, parent=self)
         self.tab_preprocessing = PreprocessingTab(project=self.project, parent=self)
-        self.tab_deviation = QWidget()
+        self.tab_deviation = DeviationTab(project=self.project, parent=self)
         self.tab_alignment = QWidget()
 
         self.tabs.addTab(self.tab_project, "Projekt")
@@ -147,3 +149,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"ASR-Extrakt geladen: {path}")
         self.tab_project.set_log_text(f"ASR-Extrakt geladen:\n{path}")
         self.tab_project.set_asr_extract(self.project.asr_extract)
+
+    def on_tab_changed(self, index: int):
+        widget = self.tabs.widget(index)
+
+        if hasattr(widget, "on_tab_activated"):
+            widget.on_tab_activated()

@@ -30,7 +30,7 @@ class DeviationMethod(Enum):
 class DeviationAnalysisConfig:
     def __init__(
         self,
-        library: str,
+        library: str = "de_core_news_md",
         method: DeviationMethod = DeviationMethod.STANDARD,
         similar_length: bool = False,
         similar_position: bool = False

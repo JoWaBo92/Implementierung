@@ -191,6 +191,7 @@ def load_project(project_dir) -> Project:
 
     if prep_payload is not None:
         project.preprocessing_results = [PreprocessingResultCollection.from_dict(x) for x in prep_payload]
+        project.current.preprocessing = project.preprocessing_results[-1]
     else:
         # --- Fallback: old projects storing preprocessing inline ---
         project.preprocessing_results = [
