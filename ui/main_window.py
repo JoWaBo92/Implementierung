@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(f"Transkript geladen: {path}")
-        self.tab_project.set_log_text(f"ranskript geladen:\n{path}")
+        self.tab_project.set_log_text(f"Transkript geladen:\n{path}")
         self.tab_project.set_transcript(self.project.transcript)
 
     def on_load_asr_extract(self):

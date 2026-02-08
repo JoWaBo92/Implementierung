@@ -43,8 +43,8 @@ class DeviationResultCollection:
     def __init__(self, config = DeviationAnalysisConfig()):
         self.time = datetime.now()
         self.config: DeviationAnalysisConfig = config
-        self.transcript_docs: List[Doc] = []
-        self.extract_docs: List[Doc] = []
+        self.transcript_docs: List[PreprocessingResult] = []
+        self.extract_docs: List[PreprocessingResult] = []
         self.result_matrix: np.ndarray = None
 
 @dataclass

@@ -33,12 +33,20 @@ class DeviationAnalysisConfig:
         library: str = "de_core_news_md",
         method: DeviationMethod = DeviationMethod.STANDARD,
         similar_length: bool = False,
-        similar_position: bool = False
+        length_min_ratio: float = 0.20,
+        length_alpha: float = 0.75,
+        ultra_short_tokens: int = 2,
+        similar_position: bool = False,
+        position_gamma: float = 4.0,
     ):
         self.library = library
         self.method = method
         self.similar_length = similar_length
+        self.length_min_ratio = length_min_ratio
+        self.length_alpha = length_alpha
+        self.ultra_short_tokens = ultra_short_tokens
         self.similar_position = similar_position
+        self.position_gamma = position_gamma
 
 
 class DeviationCalculator:
@@ -61,6 +69,67 @@ class DeviationCalculator:
             return SentenceTransformer(config.library)
         raise ValueError(f"Unknown method: {config.method}")
     
+    @staticmethod
+    def _relative_positions(n: int) -> np.ndarray:
+        if n <= 0:
+            return np.array([], dtype=np.float32)
+        if n == 1:
+            return np.array([0.5], dtype=np.float32)
+        idx = np.arange(n, dtype=np.float32)
+        return (idx + 0.5) / float(n)
+    
+    @classmethod
+    def _position_weight_matrix(cls, n_a: int, n_b: int, gamma: float) -> np.ndarray:
+        pos_a = cls._relative_positions(n_a)[:, None]   # (n_a, 1)
+        pos_b = cls._relative_positions(n_b)[None, :]   # (1, n_b)
+
+        delta = np.abs(pos_a - pos_b)                   # (n_a, n_b)
+        w = np.exp(-gamma * delta).astype(np.float32)
+        return w
+    
+    @staticmethod
+    def _doc_length(x: Any) -> int:
+        if isinstance(x, Doc):
+            return max(0, len(x))
+        if isinstance(x, str):
+            return len(x.split())
+
+        doc = getattr(x, "doc", None)
+        if isinstance(doc, Doc):
+            return max(0, len(doc))
+
+        txt = getattr(x, "clean_text", None)
+        if isinstance(txt, str):
+            return len(txt.split())
+
+        txt = getattr(x, "raw_text", None)
+        if isinstance(txt, str):
+            return len(txt.split())
+
+        # Fallback
+        return 0
+    
+    @classmethod
+    def _length_weight_matrix(cls, items_a: Sequence[Any], items_b: Sequence[Any], min_ratio: float, alpha: float, ultra_short_tokens: int = 2) -> np.ndarray:
+        la = np.array([cls._doc_length(x) for x in items_a], dtype=np.float32)  
+        lb = np.array([cls._doc_length(x) for x in items_b], dtype=np.float32) 
+
+        A = la[:, None]
+        B = lb[None, :]
+
+        mx = np.maximum(A, B)
+        mn = np.minimum(A, B)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            r = np.where(mx > 0, mn / mx, 0.0).astype(np.float32)
+
+        w = np.where(r >= float(min_ratio), np.power(r, float(alpha)), 0.0).astype(np.float32)
+
+        if ultra_short_tokens is not None and int(ultra_short_tokens) > 0:
+            w = np.where(mn < float(ultra_short_tokens), 0.0, w).astype(np.float32)
+
+        return w
+    
 
     # ---------- Calculate whole similarity matrix ----------
 
@@ -74,8 +143,7 @@ class DeviationCalculator:
             emb_a = model.encode(texts_a, convert_to_tensor=True, normalize_embeddings=True)
             emb_b = model.encode(texts_b, convert_to_tensor=True, normalize_embeddings=True)
 
-            sim = util.cos_sim(emb_a, emb_b)
-            return sim.cpu().numpy()
+            sim = util.cos_sim(emb_a, emb_b).cpu().numpy().astype(np.float32)
 
         elif self.config.method == DeviationMethod.STANDARD:
             docs_a = [self._as_doc(x) for x in items_a]
@@ -87,7 +155,7 @@ class DeviationCalculator:
             A = self._l2_normalize_np(A)
             B = self._l2_normalize_np(B)
 
-            return A @ B.T
+            sim = (A @ B.T).astype(np.float32)
 
         elif self.config.method == DeviationMethod.TRF:
             docs_a = [self._as_doc(x) for x in items_a]
@@ -99,11 +167,25 @@ class DeviationCalculator:
             EA = torch.nn.functional.normalize(EA, p=2, dim=1)
             EB = torch.nn.functional.normalize(EB, p=2, dim=1)
 
-            sim = EA @ EB.T
-            return sim.cpu().numpy()
+            sim = (EA @ EB.T).cpu().numpy().astype(np.float32)
 
         else:
             raise ValueError(f"Unknown method: {self.config.method}")
+
+        if getattr(self.config, "similar_length", False) and sim.size > 0:
+            w_len = self._length_weight_matrix(
+                items_a, items_b,
+                min_ratio=float(getattr(self.config, "length_min_ratio", 0.20)),
+                alpha=float(getattr(self.config, "length_alpha", 0.75)),
+                ultra_short_tokens=int(getattr(self.config, "ultra_short_tokens", 2))
+            )
+            sim = sim * w_len
+
+        if getattr(self.config, "similar_position", False) and sim.size > 0:
+            w_pos = self._position_weight_matrix(sim.shape[0], sim.shape[1], gamma=float(self.config.position_gamma))
+            sim = sim * w_pos
+
+        return sim
 
 
     # ---------- Calculate similarity between single values ----------
