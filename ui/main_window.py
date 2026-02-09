@@ -7,6 +7,7 @@ from ui.actions import AppActions
 from ui.tabs.project_tab import ProjectTab
 from ui.tabs.preprocessing_tab import PreprocessingTab
 from ui.tabs.deviation_tab import DeviationTab
+from ui.tabs.synchronization_tab import SynchronizationTab
 
 from domain.source_document import ASRExtract, ManualTranscript
 from domain.project import Project
@@ -77,7 +78,7 @@ class MainWindow(QMainWindow):
         self.tab_project = ProjectTab(project=self.project, parent=self)
         self.tab_preprocessing = PreprocessingTab(project=self.project, parent=self)
         self.tab_deviation = DeviationTab(project=self.project, parent=self)
-        self.tab_alignment = QWidget()
+        self.tab_alignment = SynchronizationTab(project=self.project, parent=self)
 
         self.tabs.addTab(self.tab_project, "Projekt")
         self.tabs.addTab(self.tab_preprocessing, "Preprocessing")

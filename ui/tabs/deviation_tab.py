@@ -314,7 +314,7 @@ class DeviationTab(QWidget):
             for r, res in enumerate(results):
                 time = getattr(res, "time", "")
                 method = getattr(res.config.method, "value", "")
-                length = getattr(res.config, "similar_length", "")
+                length = _length_label(res.config)
                 pos = _position_label(res.config)
 
                 table.setItem(r, 0, QTableWidgetItem(str(time)))
@@ -346,10 +346,10 @@ class DeviationTab(QWidget):
         self.sim_matrix = last.result_matrix
         self.current_transcript_index = 0
 
-        self._fill_transcript_segment_table(self.table_transcript, last.transcript_docs)
+        self._fill_transcript_segment_table(self.table_transcript, last.transcript_preprocessed)
 
-        if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(last.extract_docs) > 0:
-            self._fill_extract_segment_table(self.table_extract, last.extract_docs, self.sim_matrix[self.current_transcript_index, :])
+        if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(last.extract_preprocessed) > 0:
+            self._fill_extract_segment_table(self.table_extract, last.extract_preprocessed, self.sim_matrix[self.current_transcript_index, :])
             self.table_transcript.selectRow(0)
         else:
             self._clear_table(self.table_extract)
@@ -434,8 +434,8 @@ class DeviationTab(QWidget):
 
         result_collection = DeviationResultCollection(config=config)
         result_collection.result_matrix = self.sim_matrix
-        result_collection.extract_docs = extract_results
-        result_collection.transcript_docs = transcript_results
+        result_collection.extract_preprocessed = extract_results
+        result_collection.transcript_preprocessed = transcript_results
         self.project.deviation_analysis_results.append(result_collection)
         self.project.current.deviation_analysis = result_collection
         
@@ -471,8 +471,8 @@ class DeviationTab(QWidget):
         col: DeviationResultCollection = self.project.deviation_analysis_results[row]
         self.sim_matrix = col.result_matrix
 
-        self._fill_transcript_segment_table(self.table_transcript, col.transcript_docs)
-        self._fill_extract_segment_table(self.table_extract, col.extract_docs, col.result_matrix[self.current_transcript_index, :])
+        self._fill_transcript_segment_table(self.table_transcript, col.transcript_preprocessed)
+        self._fill_extract_segment_table(self.table_extract, col.extract_preprocessed, col.result_matrix[self.current_transcript_index, :])
 
     def _on_transcript_selection_changed(self, selected, deselected):
         rows = self.table_transcript.selectionModel().selectedRows()

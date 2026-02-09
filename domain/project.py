@@ -7,11 +7,12 @@ import numpy as np
 from spacy.tokens import Doc
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from domain.deviation import DeviationAnalysisConfig
 from domain.preprocessing import PreprocessingConfig, PreprocessingResult
 from domain.source_document import ManualTranscript, ASRExtract
+from domain.synchronization import SynchronizationConfig
 
 class PreprocessingResultCollection:
     def __init__(self, config = PreprocessingConfig()):
@@ -43,14 +44,59 @@ class DeviationResultCollection:
     def __init__(self, config = DeviationAnalysisConfig()):
         self.time = datetime.now()
         self.config: DeviationAnalysisConfig = config
-        self.transcript_docs: List[PreprocessingResult] = []
-        self.extract_docs: List[PreprocessingResult] = []
+        self.transcript_preprocessed: List[PreprocessingResult] = []
+        self.extract_preprocessed: List[PreprocessingResult] = []
         self.result_matrix: np.ndarray = None
+
+class SynchronizationResultCollection:
+    def __init__(
+        self,
+        config: SynchronizationConfig = SynchronizationConfig(),
+        transcript_preprocessed: Optional[List[PreprocessingResult]] = None,
+        extract_preprocessed: Optional[List[PreprocessingResult]] = None,
+        similarity_matrix: Optional[np.ndarray] = None,
+        alignment_path: Optional[List[Tuple[int, int]]] = None,
+        alignment_ranges_by_transcript: Optional[List[Tuple[int, int]]] = None,
+        total_cost: Optional[float] = None,
+        mean_similarity_on_path: Optional[float] = None,
+    ):
+        self.time = datetime.now()
+        self.config = config
+        self.transcript_preprocessed = transcript_preprocessed or []
+        self.extract_preprocessed = extract_preprocessed or []
+        self.similarity_matrix = similarity_matrix
+        self.alignment_path = alignment_path or []
+        self.alignment_ranges_by_transcript = alignment_ranges_by_transcript or []
+        self.total_cost = total_cost
+        self.mean_similarity_on_path = mean_similarity_on_path
+
+    def get_extract_range_for_transcript(self, transcript_index: int) -> Tuple[int, int]:
+        if (
+            transcript_index < 0
+            or transcript_index >= len(self.alignment_ranges_by_transcript)
+        ):
+            return -1, -1
+        return self.alignment_ranges_by_transcript[transcript_index]
+
+    def get_aligned_extract_indices(self, transcript_index: int) -> List[int]:
+        j0, j1 = self.get_extract_range_for_transcript(transcript_index)
+        if j0 < 0 or j1 < 0:
+            return []
+        return list(range(j0, j1 + 1))
+
+    def mean_similarity_for_transcript(self, transcript_index: int) -> Optional[float]:
+        if self.similarity_matrix is None:
+            return None
+        j0, j1 = self.get_extract_range_for_transcript(transcript_index)
+        if j0 < 0 or j1 < 0:
+            return None
+        return float(np.mean(self.similarity_matrix[transcript_index, j0:j1 + 1]))
 
 @dataclass
 class ProjectCurrentState:
     preprocessing: Optional[PreprocessingResultCollection] = None
     deviation_analysis: Optional[DeviationResultCollection] = None
+    synchronization: Optional[SynchronizationResultCollection] = None
 
 class Project:
     def __init__(self, title: str = "", description: str = "", transcript: ManualTranscript = None, asr_extract: ASRExtract = None):
@@ -62,7 +108,7 @@ class Project:
         self.preprocessing_results: List[PreprocessingResultCollection] = []
         self.current:ProjectCurrentState = ProjectCurrentState()
         self.deviation_analysis_results: List[DeviationResultCollection] = []
-        # self.alignment_results = []
+        self.synchronization_results: List[SynchronizationResultCollection] = []
 
     def to_dict(self):
         return {
