@@ -185,12 +185,14 @@ class SynchronizationTab(QWidget):
         box = QGroupBox("Transkript (Alignment-Übersicht)")
         layout = QVBoxLayout(box)
 
-        self.table_transcript = QTableWidget(0, 4)
-        self.table_transcript.setHorizontalHeaderLabels(["#", "Normalisiert", "ASR-Bereich", "Ø-Score"])
+        self.table_transcript = QTableWidget(0, 6)
+        self.table_transcript.setHorizontalHeaderLabels(["#", "Normalisiert", "ASR-Bereich", "Ø-Score", "Start", "Ende"])
         self._configure_table(self.table_transcript)
         self.table_transcript.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table_transcript.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table_transcript.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.table_transcript.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.table_transcript.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
 
         layout.addWidget(self.table_transcript)
         return box
@@ -199,19 +201,31 @@ class SynchronizationTab(QWidget):
         box = QGroupBox("Zugeordnete ASR-Segmente")
         layout = QVBoxLayout(box)
 
-        self.table_extract = QTableWidget(0, 4)
-        self.table_extract.setHorizontalHeaderLabels(["#", "Normalisiert", "Similarity", "Pfad"])
+        self.table_extract = QTableWidget(0, 5)
+        self.table_extract.setHorizontalHeaderLabels(["#", "Normalisiert", "Similarity", "Pfad", "Zeit"])
         self._configure_table(self.table_extract)
+
         self.table_extract.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table_extract.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table_extract.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.table_extract.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
         layout.addWidget(self.table_extract)
         return box
 
+
     # ---------------------------------------------------------------------
     # Table helpers
     # ---------------------------------------------------------------------
+    @staticmethod
+    def _ms_to_time_str(ms: int) -> str:
+        hh = ms // 3600000
+        ms %= 3600000
+        mm = ms // 60000
+        ms %= 60000
+        ss = ms // 1000
+        mmm = ms % 1000
+        return f"{hh:02d}:{mm:02d}:{ss:02d}.{mmm:03d}"
 
     def _configure_table(self, table: QTableWidget):
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -302,24 +316,14 @@ class SynchronizationTab(QWidget):
     def _fill_transcript_table(self, segments: List[Any]):
         table = self.table_transcript
 
-        # --- resolve ranges ---
-        ranges = self.align_ranges_by_transcript
-
-        current_sync = None
+        col = None
         if self.project and getattr(self.project, "current", None) is not None:
-            current_sync = getattr(self.project.current, "synchronization", None)
-
-        if ranges is None and current_sync is not None:
-            ranges = getattr(current_sync, "alignment_ranges_by_transcript", None)
-
-        if ranges is None and self.project and getattr(self.project, "synchronization_results", None):
+            col = getattr(self.project.current, "synchronization", None)
+        if col is None and self.project and getattr(self.project, "synchronization_results", None):
             if len(self.project.synchronization_results) > 0:
-                ranges = getattr(self.project.synchronization_results[-1], "alignment_ranges_by_transcript", None)
+                col = self.project.synchronization_results[-1]
 
-        # --- resolve similarity matrix ---
-        sim = self.sim_matrix
-        if sim is None and current_sync is not None:
-            sim = getattr(current_sync, "similarity_matrix", None)
+        aligned = getattr(col, "aligned_transcript", None) if col is not None else None
 
         table.blockSignals(True)
         try:
@@ -331,36 +335,29 @@ class SynchronizationTab(QWidget):
                 table.setItem(i, 0, QTableWidgetItem(str(i)))
                 table.setItem(i, 1, QTableWidgetItem(str(clean)))
 
-                # range label
-                j0, j1 = (-1, -1)
-                if ranges is not None and 0 <= i < len(ranges):
-                    j0, j1 = ranges[i]
+                range_str = "—"
+                mean_str = "—"
+                start_str = "—"
+                end_str = "—"
 
-                if j0 is None or j1 is None or j0 < 0 or j1 < 0:
-                    range_str = "—"
-                    mean_str = "—"
-                else:
-                    range_str = f"{j0}–{j1}"
-
-                    # mean similarity over the aligned range (if sim available and shapes fit)
-                    mean_val = None
-                    if isinstance(sim, np.ndarray) and sim.ndim == 2:
-                        if i < sim.shape[0] and j1 < sim.shape[1] and j0 <= j1:
-                            row = sim[i, j0:j1 + 1]
-                            if row.size > 0:
-                                # ignore nan
-                                finite = np.isfinite(row)
-                                if np.any(finite):
-                                    mean_val = float(np.mean(row[finite]))
-
-                    mean_str = f"{mean_val:.3f}" if mean_val is not None else "—"
+                if aligned is not None and 0 <= i < len(aligned):
+                    a = aligned[i]
+                    if a.extract_j0 >= 0 and a.extract_j1 >= 0:
+                        range_str = f"{a.extract_j0}–{a.extract_j1}"
+                    if a.mean_similarity is not None:
+                        mean_str = f"{a.mean_similarity:.3f}"
+                    if a.start_ms is not None:
+                        start_str = self._ms_to_time_str(int(a.start_ms))
+                    if a.end_ms is not None:
+                        end_str = self._ms_to_time_str(int(a.end_ms))
 
                 table.setItem(i, 2, QTableWidgetItem(range_str))
                 table.setItem(i, 3, QTableWidgetItem(mean_str))
+                table.setItem(i, 4, QTableWidgetItem(start_str))
+                table.setItem(i, 5, QTableWidgetItem(end_str))
         finally:
             table.blockSignals(False)
 
-        # keep selection consistent
         if len(segments) > 0:
             self.current_transcript_index = max(0, min(self.current_transcript_index, len(segments) - 1))
             table.selectRow(self.current_transcript_index)
@@ -409,8 +406,13 @@ class SynchronizationTab(QWidget):
         j0 = max(0, int(j0))
         j1 = min(len(segments) - 1, int(j1))
 
+        # --- extract times from project ---
+        extract_times_ms = None
+        if self.project is not None and getattr(self.project, "asr_extract", None) is not None:
+            # ensure same length as extract segments
+            extract_times_ms = [tm.time for tm in self.project.asr_extract.times]
+
         # --- build move lookup from path: dict[(i,j)] -> move ---
-        # move describes how we arrived at (i,j): diag/up/left
         moves = {}
         if path:
             for (i0, j0p), (i1, j1p) in zip(path[:-1], path[1:]):
@@ -421,18 +423,15 @@ class SynchronizationTab(QWidget):
                 elif i1 == i0 and j1p == j0p + 1:
                     moves[(i1, j1p)] = "left"    # extract advanced (1:n)
 
-            # mark start cell if present
-            start = path[0]
-            moves[start] = "start"
+            moves[path[0]] = "start"
 
         def _move_label(m: str) -> str:
-            # compact, readable in table
             if m == "diag":
                 return "↘"
             if m == "left":
-                return "→"   # extract step (1:n)
+                return "→"
             if m == "up":
-                return "↑"   # transcript step (n:1)
+                return "↑"
             if m == "start":
                 return "S"
             return ""
@@ -450,7 +449,6 @@ class SynchronizationTab(QWidget):
                 # similarity
                 sim_val = None
                 if sim_row is not None:
-                    # sim_row is full-length row for all extract indices
                     if 0 <= j < len(sim_row):
                         sim_val = float(sim_row[j])
                 elif isinstance(sim, np.ndarray) and sim.ndim == 2:
@@ -463,12 +461,20 @@ class SynchronizationTab(QWidget):
                 m = moves.get((i, j), "")
                 m_str = _move_label(m)
 
+                # time string (ASR start time)
+                if extract_times_ms is not None and 0 <= j < len(extract_times_ms):
+                    time_str = self._ms_to_time_str(int(extract_times_ms[j]))
+                else:
+                    time_str = "—"
+
                 table.setItem(r, 0, QTableWidgetItem(str(j)))
                 table.setItem(r, 1, QTableWidgetItem(str(clean)))
                 table.setItem(r, 2, QTableWidgetItem(sim_str))
                 table.setItem(r, 3, QTableWidgetItem(m_str))
+                table.setItem(r, 4, QTableWidgetItem(time_str))
         finally:
             table.blockSignals(False)
+
 
 
     def _fill_all_tables_with_latest(self):
@@ -611,6 +617,9 @@ class SynchronizationTab(QWidget):
             mean_similarity_on_path=synch_result.mean_similarity_on_path,
             similarity_matrix=sim,
         )
+
+        extract_times_ms = [tm.time for tm in self.project.asr_extract.times]
+        col.build_aligned_transcript(extract_times_ms)
 
         self.project.synchronization_results.append(col)
         self.project.current.synchronization = col

@@ -42,7 +42,7 @@ class ASRExtract(SourceDocument):
     def __init__(self, file_name):
         super().__init__(file_name)
 
-        self.times = []
+        self.times: List[TimeMark] = []
 
         with open(file_name, 'r', encoding='utf-8') as file:
             inx = 0

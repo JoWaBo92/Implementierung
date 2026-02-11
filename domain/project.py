@@ -48,27 +48,38 @@ class DeviationResultCollection:
         self.extract_preprocessed: List[PreprocessingResult] = []
         self.result_matrix: np.ndarray = None
 
+@dataclass
+class AlignedSegment:
+    transcript_index: int
+    extract_j0: int
+    extract_j1: int
+    start_ms: Optional[int] = None
+    end_ms: Optional[int] = None
+    mean_similarity: Optional[float] = None
+
 class SynchronizationResultCollection:
     def __init__(
         self,
         config: SynchronizationConfig = SynchronizationConfig(),
-        transcript_preprocessed: Optional[List[PreprocessingResult]] = None,
-        extract_preprocessed: Optional[List[PreprocessingResult]] = None,
+        transcript_preprocessed: List[PreprocessingResult] = [],
+        extract_preprocessed: List[PreprocessingResult] = [],
         similarity_matrix: Optional[np.ndarray] = None,
-        alignment_path: Optional[List[Tuple[int, int]]] = None,
-        alignment_ranges_by_transcript: Optional[List[Tuple[int, int]]] = None,
+        alignment_path: List[Tuple[int, int]] = [],
+        alignment_ranges_by_transcript: List[Tuple[int, int]] = [],
         total_cost: Optional[float] = None,
         mean_similarity_on_path: Optional[float] = None,
+        aligned_transcript: List[AlignedSegment] = []
     ):
         self.time = datetime.now()
         self.config = config
-        self.transcript_preprocessed = transcript_preprocessed or []
-        self.extract_preprocessed = extract_preprocessed or []
+        self.transcript_preprocessed = transcript_preprocessed
+        self.extract_preprocessed = extract_preprocessed
         self.similarity_matrix = similarity_matrix
-        self.alignment_path = alignment_path or []
-        self.alignment_ranges_by_transcript = alignment_ranges_by_transcript or []
+        self.alignment_path = alignment_path
+        self.alignment_ranges_by_transcript = alignment_ranges_by_transcript
         self.total_cost = total_cost
         self.mean_similarity_on_path = mean_similarity_on_path
+        self.aligned_transcript: List[AlignedSegment] = aligned_transcript
 
     def get_extract_range_for_transcript(self, transcript_index: int) -> Tuple[int, int]:
         if (
@@ -91,6 +102,49 @@ class SynchronizationResultCollection:
         if j0 < 0 or j1 < 0:
             return None
         return float(np.mean(self.similarity_matrix[transcript_index, j0:j1 + 1]))
+    
+    def build_aligned_transcript(self, extract_times_ms: List[int]) -> None:
+        self.aligned_transcript = []
+
+        nE = len(extract_times_ms)
+        sim = self.similarity_matrix
+
+        for i in range(len(self.transcript_preprocessed)):
+            j0, j1 = self.get_extract_range_for_transcript(i)
+
+            if j0 < 0 or j1 < 0 or j0 > j1 or j0 >= nE:
+                self.aligned_transcript.append(
+                    AlignedSegment(transcript_index=i, extract_j0=j0, extract_j1=j1)
+                )
+                continue
+
+            j0 = max(0, int(j0))
+            j1 = min(int(j1), nE - 1)
+
+            start_ms = int(extract_times_ms[j0])
+            if j1 + 1 < nE:
+                end_ms = int(extract_times_ms[j1 + 1])
+            else:
+                end_ms = int(extract_times_ms[j1])
+
+            mean_sim = None
+            if isinstance(sim, np.ndarray) and sim.ndim == 2:
+                if i < sim.shape[0] and j1 < sim.shape[1]:
+                    row = sim[i, j0:j1 + 1]
+                    finite = np.isfinite(row)
+                    if np.any(finite):
+                        mean_sim = float(np.mean(row[finite]))
+
+            self.aligned_transcript.append(
+                AlignedSegment(
+                    transcript_index=i,
+                    extract_j0=j0,
+                    extract_j1=j1,
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                    mean_similarity=mean_sim,
+                )
+            )
 
 @dataclass
 class ProjectCurrentState:
