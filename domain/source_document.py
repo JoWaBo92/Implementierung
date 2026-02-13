@@ -98,8 +98,3 @@ if __name__ == "__main__":
 
     transcript = ManualTranscript("FaPra Timealignment\FaPra Timealignment\ADG3149_01_01.odt")
     print(transcript)
-
-
-    
-
-    

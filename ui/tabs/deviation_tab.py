@@ -388,72 +388,80 @@ class DeviationTab(QWidget):
         self._fill_combo_method()
 
     def _on_click_run(self):
-        if not self.combo_language_model.isEnabled():
-            QMessageBox.warning(self, "Keine Preprocessing-Ergebnisse vorhanden.", 
-                "Zur Durchführung der Abweichungsanalyse zunächst ein Preprocessing durchführen.")
-            return
+        from PyQt5.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            if not self.combo_language_model.isEnabled():
+                QMessageBox.warning(self, "Keine Preprocessing-Ergebnisse vorhanden.", 
+                    "Zur Durchführung der Abweichungsanalyse zunächst ein Preprocessing durchführen.")
+                return
 
-        if self.combo_language_model.currentText() == DeviationMethod.SENT_TRF.value:
-            library = "paraphrase-multilingual-MiniLM-L12-v2"
-            method = DeviationMethod.SENT_TRF
-        else:
-            library = self.project.current.preprocessing.config.spacy_model
-            method = DeviationMethod.TRF if self.combo_language_model.currentText() == DeviationMethod.TRF.value else DeviationMethod.STANDARD
+            if self.combo_language_model.currentText() == DeviationMethod.SENT_TRF.value:
+                library = "paraphrase-multilingual-MiniLM-L12-v2"
+                method = DeviationMethod.SENT_TRF
+            else:
+                library = self.project.current.preprocessing.config.spacy_model
+                method = DeviationMethod.TRF if self.combo_language_model.currentText() == DeviationMethod.TRF.value else DeviationMethod.STANDARD
 
-        gamma_map = {"schwach": 2.5, "mittel": 4.0, "stark": 7.0}
-        gamma = float(gamma_map.get(self.combo_pos_strength.currentText(), 4.0))
+            gamma_map = {"schwach": 2.5, "mittel": 4.0, "stark": 7.0}
+            gamma = float(gamma_map.get(self.combo_pos_strength.currentText(), 4.0))
 
-        len_preset = self.combo_len_strength.currentText().lower()
-        len_map = {
-            "schwach": dict(min_ratio=0.20, alpha=0.75, ultra_short_tokens=2),
-            "mittel":  dict(min_ratio=0.35, alpha=1.50, ultra_short_tokens=2),
-            "stark":   dict(min_ratio=0.50, alpha=2.50, ultra_short_tokens=2),
-        }
-        lp = len_map.get(len_preset, len_map["mittel"])
+            len_preset = self.combo_len_strength.currentText().lower()
+            len_map = {
+                "schwach": dict(min_ratio=0.20, alpha=0.75, ultra_short_tokens=2),
+                "mittel":  dict(min_ratio=0.35, alpha=1.50, ultra_short_tokens=2),
+                "stark":   dict(min_ratio=0.50, alpha=2.50, ultra_short_tokens=2),
+            }
+            lp = len_map.get(len_preset, len_map["mittel"])
 
-        config = DeviationAnalysisConfig(
-            library=library,
-            method=method,
-            similar_length=self.chk_similar_length.isChecked(),
-            length_min_ratio=lp["min_ratio"],
-            length_alpha=lp["alpha"],
-            ultra_short_tokens=lp["ultra_short_tokens"],
-            similar_position=self.chk_pos_in_src.isChecked(),
-            position_gamma=gamma,
-        )
+            config = DeviationAnalysisConfig(
+                library=library,
+                method=method,
+                similar_length=self.chk_similar_length.isChecked(),
+                length_min_ratio=lp["min_ratio"],
+                length_alpha=lp["alpha"],
+                ultra_short_tokens=lp["ultra_short_tokens"],
+                similar_position=self.chk_pos_in_src.isChecked(),
+                position_gamma=gamma,
+            )
 
-        calc = DeviationCalculator(config)
+            calc = DeviationCalculator(config)
 
-        transcript_results = self.project.current.preprocessing.transcript_results
-        extract_results = self.project.current.preprocessing.extract_results
+            transcript_results = self.project.current.preprocessing.transcript_results
+            extract_results = self.project.current.preprocessing.extract_results
 
-        transcript_docs = [r.doc for r in transcript_results]
-        extract_docs = [r.doc for r in extract_results]
+            transcript_docs = [r.doc for r in transcript_results]
+            extract_docs = [r.doc for r in extract_results]
 
-        self.sim_matrix = calc.similarity_matrix(transcript_docs, extract_docs)
+            self.sim_matrix = calc.similarity_matrix(transcript_docs, extract_docs)
 
-        result_collection = DeviationResultCollection(config=config)
-        result_collection.result_matrix = self.sim_matrix
-        result_collection.extract_preprocessed = extract_results
-        result_collection.transcript_preprocessed = transcript_results
-        self.project.deviation_analysis_results.append(result_collection)
-        self.project.current.deviation_analysis = result_collection
+            result_collection = DeviationResultCollection(config=config)
+            result_collection.result_matrix = self.sim_matrix
+            result_collection.extract_preprocessed = extract_results
+            result_collection.transcript_preprocessed = transcript_results
+            self.project.deviation_analysis_results.append(result_collection)
+            self.project.current.deviation_analysis = result_collection
         
-        self._fill_transcript_segment_table(self.table_transcript, transcript_results)
+            self._fill_transcript_segment_table(self.table_transcript, transcript_results)
 
-        self.current_transcript_index = 0
-        if len(transcript_results) > 0:
-            self.table_transcript.selectRow(0)
+            self.current_transcript_index = 0
+            if len(transcript_results) > 0:
+                self.table_transcript.selectRow(0)
 
-        if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(extract_results) > 0:
-            sim_row = self.sim_matrix[self.current_transcript_index, :]  # 1D: len(extract)
-            self._fill_extract_segment_table(self.table_extract, extract_results, sim_row)
-        else:
-            self._clear_table(self.table_extract)
+            if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(extract_results) > 0:
+                sim_row = self.sim_matrix[self.current_transcript_index, :]  # 1D: len(extract)
+                self._fill_extract_segment_table(self.table_extract, extract_results, sim_row)
+            else:
+                self._clear_table(self.table_extract)
 
-        self._fill_history_table()
-        print("Deviation analysis done")
+            self._fill_history_table()
+            print("Deviation analysis done")
 
+            if hasattr(self.parent(), "update_ui_state"):
+                self.parent().update_ui_state()
+
+        finally:
+            QApplication.restoreOverrideCursor()
     def _on_history_selection_changed(self, selected, deselected):
         rows = self.table_history.selectionModel().selectedRows()
         if not rows:

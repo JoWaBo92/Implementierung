@@ -231,43 +231,53 @@ class PreprocessingTab(QWidget):
         self._fill_combo_language_model()
 
     def _on_click_run(self):
-        if not self.combo_language_model.isEnabled():
-            QMessageBox.warning(self, "Kein spaCy-Modell installiert.", 
-                "Zur Durchführung des Preprocessings bitte mindestens ein spaCy-Sprachmodell installieren")
-            return
+        from PyQt5.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            if not self.combo_language_model.isEnabled():
+                QMessageBox.warning(self, "Kein spaCy-Modell installiert.", 
+                    "Zur Durchführung des Preprocessings bitte mindestens ein spaCy-Sprachmodell installieren")
+                return
         
-        transcript = getattr(self.project, "transcript", None)
-        if not transcript:
-            QMessageBox.warning(self, "Kein Transcript vorhanden.",
-                "Zur Durchführung des Preprocessings bitte eine Transcript-Datei laden")
-            return
+            transcript = getattr(self.project, "transcript", None)
+            if not transcript:
+                QMessageBox.warning(self, "Kein Transcript vorhanden.",
+                    "Zur Durchführung des Preprocessings bitte eine Transcript-Datei laden")
+                return
         
-        extract = getattr(self.project, "asr_extract", None)
-        if not extract:
-            QMessageBox.warning(self, "Kein ASR-Extrakt vorhanden.",
-                "Zur Durchführung des Preprocessings bitte eine ASR-Extrakt-Datei laden")
-            return
+            extract = getattr(self.project, "asr_extract", None)
+            if not extract:
+                QMessageBox.warning(self, "Kein ASR-Extrakt vorhanden.",
+                    "Zur Durchführung des Preprocessings bitte eine ASR-Extrakt-Datei laden")
+                return
 
-        pipe_config = PreprocessingConfig(
-            spacy_model=self.combo_language_model.currentText(), 
-            lowercase=self.chk_lowercase.isChecked(), 
-            keep_punct=self.chk_keep_punct.isChecked()
-            )
-        pipe = PreprocessingPipeline(config=pipe_config)
-        pre_result_transcript = pipe.run_batch(self.project.transcript.segments)
-        pre_result_extract = pipe.run_batch(self.project.asr_extract.segments)
+            pipe_config = PreprocessingConfig(
+                spacy_model=self.combo_language_model.currentText(), 
+                lowercase=self.chk_lowercase.isChecked(), 
+                keep_punct=self.chk_keep_punct.isChecked()
+                )
+            pipe = PreprocessingPipeline(config=pipe_config)
+            pre_result_transcript = pipe.run_batch(self.project.transcript.segments)
+            pre_result_extract = pipe.run_batch(self.project.asr_extract.segments)
 
-        result_collection = PreprocessingResultCollection(config=pipe_config)
-        result_collection.transcript_results = pre_result_transcript
-        result_collection.extract_results = pre_result_extract
-        self.project.preprocessing_results.append(result_collection)
-        self.project.current.preprocessing = result_collection
+            result_collection = PreprocessingResultCollection(config=pipe_config)
+            result_collection.transcript_results = pre_result_transcript
+            result_collection.extract_results = pre_result_extract
+            self.project.preprocessing_results.append(result_collection)
+            self.project.current.preprocessing = result_collection
 
-        self._fill_result_table(self.table_transcript_result, pre_result_transcript)
-        self._fill_result_table(self.table_extract_result, pre_result_extract)
+            self._fill_result_table(self.table_transcript_result, pre_result_transcript)
+            self._fill_result_table(self.table_extract_result, pre_result_extract)
 
-        self._fill_history_table()
-        print("Preprocessing done")
+            self._fill_history_table()
+            print("Preprocessing done")
+
+            if hasattr(self.parent(), "update_ui_state"):
+                self.parent().update_ui_state()
+
+        finally:
+            QApplication.restoreOverrideCursor()
+
 
     def _on_history_selection_changed(self, selected, deselected):
         rows = self.table_history.selectionModel().selectedRows()

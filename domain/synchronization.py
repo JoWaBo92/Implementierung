@@ -262,5 +262,3 @@ if __name__ == "__main__":
             print(f"           {asr_text}")
     
     plot_alignment(sim_matrix, synch_results.path)
-
-

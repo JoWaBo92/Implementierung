@@ -116,7 +116,7 @@ class ProjectTab(QWidget):
             self.table_transcript.setItem(r, 1, QTableWidgetItem(str(speaker)))
             self.table_transcript.setItem(r, 2, QTableWidgetItem(str(text)))
 
-        self.table_transcript.resizeColumnsToContents()
+        # self.table_transcript.resizeColumnsToContents()
 
     def _fill_asr_table(self, extract):
         self._clear_table(self.table_asr)
@@ -131,4 +131,4 @@ class ProjectTab(QWidget):
             self.table_asr.setItem(r, 0, QTableWidgetItem(str(times[r])))
             self.table_asr.setItem(r, 1, QTableWidgetItem(str(segs[r])))
 
-        self.table_asr.resizeColumnsToContents()
+        # self.table_asr.resizeColumnsToContents()

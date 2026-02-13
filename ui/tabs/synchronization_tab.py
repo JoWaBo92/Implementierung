@@ -14,7 +14,6 @@ from typing import List, Optional, Any
 from domain.project import Project, SynchronizationResultCollection
 from domain.synchronization import SynchronizationCalculator, SynchronizationConfig
 
-
 class SynchronizationTab(QWidget):
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
@@ -65,7 +64,8 @@ class SynchronizationTab(QWidget):
         self._fill_all_tables_with_latest()
 
     def on_tab_activated(self):
-        pass
+        # Tab wurde aktiviert: UI an aktuellen Projektzustand anpassen
+        self._fill_all_tables_with_latest()
 
     # ---------------------------------------------------------------------
     # Wiring
@@ -306,11 +306,14 @@ class SynchronizationTab(QWidget):
         finally:
             table.blockSignals(False)
 
-        # Auto-select last entry
+        # Auto-select current (falls gesetzt), sonst letztes Ergebnis
         if len(results) > 0:
-            last = len(results) - 1
-            table.selectRow(last)
-            self._show_history_index(last)
+            idx = len(results) - 1
+            cur = getattr(getattr(self.project, "current", None), "synchronization", None)
+            if cur in results:
+                idx = results.index(cur)
+            table.selectRow(idx)
+            self._show_history_index(idx)
 
 
     def _fill_transcript_table(self, segments: List[Any]):
@@ -427,11 +430,11 @@ class SynchronizationTab(QWidget):
 
         def _move_label(m: str) -> str:
             if m == "diag":
-                return "↘"
+                return "?"
             if m == "left":
-                return "→"
+                return "?"
             if m == "up":
-                return "↑"
+                return "?"
             if m == "start":
                 return "S"
             return ""
@@ -492,21 +495,22 @@ class SynchronizationTab(QWidget):
             self._clear_table(self.table_extract)
             return
 
-        # latest run
-        last = results[-1]
+        # Ergebnis wählen: project.current.synchronization bevorzugen, sonst letztes Ergebnis
+        cur = getattr(getattr(self.project, "current", None), "synchronization", None)
+        selected = cur if (cur in results) else results[-1]
 
-        # update project.current
-        if getattr(self.project, "current", None) is not None:
-            setattr(self.project.current, "synchronization", last)
+        # update project.current (nur setzen, wenn noch nichts gewählt)
+        if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
+            setattr(self.project.current, "synchronization", selected)
 
         # cache locally
         self.results = results
-        self.sim_matrix = getattr(last, "similarity_matrix", None)
-        self.align_path = getattr(last, "alignment_path", None)
-        self.align_ranges_by_transcript = getattr(last, "alignment_ranges_by_transcript", None)
+        self.sim_matrix = getattr(selected, "similarity_matrix", None)
+        self.align_path = getattr(selected, "alignment_path", None)
+        self.align_ranges_by_transcript = getattr(selected, "alignment_ranges_by_transcript", None)
 
-        transcript_results = getattr(last, "transcript_preprocessed", None) or []
-        extract_results = getattr(last, "extract_preprocessed", None) or []
+        transcript_results = getattr(selected, "transcript_preprocessed", None) or []
+        extract_results = getattr(selected, "extract_preprocessed", None) or []
 
         # fill tables
         self._fill_history_table()
@@ -521,6 +525,7 @@ class SynchronizationTab(QWidget):
 
         # select transcript row (will NOT trigger show handler reliably if signals blocked elsewhere)
         self.table_transcript.selectRow(self.current_transcript_index)
+        self._show_transcript_index(self.current_transcript_index)
 
         # fill aligned extract table
         sim_row = None
@@ -536,109 +541,118 @@ class SynchronizationTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_click_run(self):
-        # --- 1) Guard: need deviation analysis results ---
-        dev = getattr(self.project.current, "deviation_analysis", None)
-        if dev is None:
-            QMessageBox.warning(
-                self,
-                "Keine Ähnlichkeitsmatrix vorhanden",
-                "Bitte zuerst im Tab 'Abweichungsanalyse' eine Ähnlichkeitsuntersuchung durchführen."
-            )
-            return
-
-        sim = getattr(dev, "result_matrix", None)
-        if sim is None or not isinstance(sim, np.ndarray) or sim.ndim != 2 or sim.size == 0:
-            QMessageBox.warning(
-                self,
-                "Ungültige Ähnlichkeitsmatrix",
-                "Die Ähnlichkeitsmatrix fehlt oder ist leer. Bitte Abweichungsanalyse erneut ausführen."
-            )
-            return
-
-        transcript_results = getattr(dev, "transcript_preprocessed", None) or []
-        extract_results = getattr(dev, "extract_preprocessed", None) or []
-
-        # --- 2) Map GUI presets -> numeric config (alignment only) ---
-        # ASR-Split-Toleranz (vertical steps): lower penalty => more 1:n allowed
-        step_v_map = {
-            "schwach": 0.06,  # erlaubt mehr ASR-Splits
-            "mittel":  0.10,
-            "stark":   0.18,  # bestraft viele Splits
-        }
-        # Transkript-Zusammenfassung (horizontal steps): lower penalty => more n:1 allowed
-        step_h_map = {
-            "schwach": 0.08,
-            "mittel":  0.12,
-            "stark":   0.22,
-        }
-        # Mindestähnlichkeit gating
-        min_sim_map = {
-            "niedrig": 0.10,
-            "mittel":  0.18,
-            "hoch":    0.28,
-        }
-
-        asr_choice = (self.combo_asr_split.currentText() or "mittel").strip().lower()
-        tr_choice = (self.combo_tr_merge.currentText() or "mittel").strip().lower()
-        min_choice = (self.combo_min_sim.currentText() or "mittel").strip().lower()
-
-        step_v = float(step_v_map.get(asr_choice, 0.10))
-        step_h = float(step_h_map.get(tr_choice, 0.12))
-        min_sim = float(min_sim_map.get(min_choice, 0.18))
-
-        band = None
-        if self.chk_use_band.isChecked():
-            b = int(self.spin_band.value())
-            band = b if b > 0 else 0
-
-        # --- 3) Run calculator ---
-        synch_config = SynchronizationConfig(
-            step_v=step_v,
-            step_h=step_h,
-            min_sim=min_sim,
-            band=band,
-        )
-        synch_calc = SynchronizationCalculator(config=synch_config)
-
+        from PyQt5.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            synch_result = synch_calc.synchronize(sim)
-        except Exception as e:
-            QMessageBox.critical(self, "Synchronisierung fehlgeschlagen", str(e))
-            return
+            # --- 1) Guard: need deviation analysis results ---
+            dev = getattr(self.project.current, "deviation_analysis", None)
+            if dev is None:
+                QMessageBox.warning(
+                    self,
+                    "Keine Ähnlichkeitsmatrix vorhanden",
+                    "Bitte zuerst im Tab 'Abweichungsanalyse' eine Ähnlichkeitsuntersuchung durchführen."
+                )
+                return
 
-        # --- 4) Store in project context ---
-        col = SynchronizationResultCollection(
-            config=synch_config,
-            transcript_preprocessed=transcript_results,
-            extract_preprocessed=extract_results,
-            alignment_path=synch_result.path,
-            alignment_ranges_by_transcript=synch_result.ranges_by_transcript,
-            total_cost=synch_result.total_cost,
-            mean_similarity_on_path=synch_result.mean_similarity_on_path,
-            similarity_matrix=sim,
-        )
+            sim = getattr(dev, "result_matrix", None)
+            if sim is None or not isinstance(sim, np.ndarray) or sim.ndim != 2 or sim.size == 0:
+                QMessageBox.warning(
+                    self,
+                    "Ungültige Ähnlichkeitsmatrix",
+                    "Die Ähnlichkeitsmatrix fehlt oder ist leer. Bitte Abweichungsanalyse erneut ausführen."
+                )
+                return
 
-        extract_times_ms = [tm.time for tm in self.project.asr_extract.times]
-        col.build_aligned_transcript(extract_times_ms)
+            transcript_results = getattr(dev, "transcript_preprocessed", None) or []
+            extract_results = getattr(dev, "extract_preprocessed", None) or []
 
-        self.project.synchronization_results.append(col)
-        self.project.current.synchronization = col
+            # --- 2) Map GUI presets -> numeric config (alignment only) ---
+            # ASR-Split-Toleranz (vertical steps): lower penalty => more 1:n allowed
+            step_v_map = {
+                "schwach": 0.06,  # erlaubt mehr ASR-Splits
+                "mittel":  0.10,
+                "stark":   0.18,  # bestraft viele Splits
+            }
+            # Transkript-Zusammenfassung (horizontal steps): lower penalty => more n:1 allowed
+            step_h_map = {
+                "schwach": 0.08,
+                "mittel":  0.12,
+                "stark":   0.22,
+            }
+            # Mindestähnlichkeit gating
+            min_sim_map = {
+                "niedrig": 0.10,
+                "mittel":  0.18,
+                "hoch":    0.28,
+            }
 
-        # Update local state
-        self.results = self.project.synchronization_results
-        self.sim_matrix = sim
-        self.align_path = synch_result.path
-        self.align_ranges_by_transcript = synch_result.ranges_by_transcript
-        self.current_transcript_index = 0
+            asr_choice = (self.combo_asr_split.currentText() or "mittel").strip().lower()
+            tr_choice = (self.combo_tr_merge.currentText() or "mittel").strip().lower()
+            min_choice = (self.combo_min_sim.currentText() or "mittel").strip().lower()
 
-        # --- 5) Refresh UI
-        self._fill_history_table()
-        self._fill_transcript_table(transcript_results)
+            step_v = float(step_v_map.get(asr_choice, 0.10))
+            step_h = float(step_h_map.get(tr_choice, 0.12))
+            min_sim = float(min_sim_map.get(min_choice, 0.18))
 
-        if len(transcript_results) > 0:
-            self.table_transcript.selectRow(0)
-            self._show_transcript_index(0)
+            band = None
+            if self.chk_use_band.isChecked():
+                b = int(self.spin_band.value())
+                band = b if b > 0 else 0
 
+            # --- 3) Run calculator ---
+            synch_config = SynchronizationConfig(
+                step_v=step_v,
+                step_h=step_h,
+                min_sim=min_sim,
+                band=band,
+            )
+            synch_calc = SynchronizationCalculator(config=synch_config)
+
+            try:
+                synch_result = synch_calc.synchronize(sim)
+            except Exception as e:
+                QMessageBox.critical(self, "Synchronisierung fehlgeschlagen", str(e))
+                return
+
+            # --- 4) Store in project context ---
+            col = SynchronizationResultCollection(
+                config=synch_config,
+                transcript_preprocessed=transcript_results,
+                extract_preprocessed=extract_results,
+                alignment_path=synch_result.path,
+                alignment_ranges_by_transcript=synch_result.ranges_by_transcript,
+                total_cost=synch_result.total_cost,
+                mean_similarity_on_path=synch_result.mean_similarity_on_path,
+                similarity_matrix=sim,
+            )
+
+            extract_times_ms = [tm.time for tm in self.project.asr_extract.times]
+            col.build_aligned_transcript(extract_times_ms)
+
+            self.project.synchronization_results.append(col)
+            self.project.current.synchronization = col
+
+            # Update local state
+            self.results = self.project.synchronization_results
+            self.sim_matrix = sim
+            self.align_path = synch_result.path
+            self.align_ranges_by_transcript = synch_result.ranges_by_transcript
+            self.current_transcript_index = 0
+
+            # --- 5) Refresh UI
+            self._fill_history_table()
+            self._fill_transcript_table(transcript_results)
+
+            if len(transcript_results) > 0:
+                self.table_transcript.selectRow(0)
+                self._show_transcript_index(0)
+
+            # Actions in MainWindow aktualisieren (z.B. Export aktivieren)
+            if hasattr(self.parent(), "update_ui_state"):
+                self.parent().update_ui_state()
+
+        finally:
+            QApplication.restoreOverrideCursor()
     def _on_history_selection_changed(self, selected, deselected):
         rows = self.table_history.selectionModel().selectedRows()
         if not rows:
