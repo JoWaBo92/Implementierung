@@ -20,7 +20,7 @@ from domain.deviation import DeviationAnalysisConfig, DeviationCalculator, Devia
 class AlignmentAlgorithm(Enum):
     DTW = "DTW"
 
-@dataclass(frozen=True)
+@dataclass
 class SynchronizationConfig:
     algorithm: AlignmentAlgorithm = AlignmentAlgorithm.DTW
 
@@ -31,6 +31,57 @@ class SynchronizationConfig:
     big_cost: float = 1e6
 
     band: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        return {
+            # robust: algorithm als Name speichern
+            "algorithm": getattr(self.algorithm, "name", str(self.algorithm)),
+            "step_v": float(self.step_v),
+            "step_h": float(self.step_h),
+            "min_sim": (float(self.min_sim) if self.min_sim is not None else None),
+            "big_cost": float(self.big_cost),
+            "band": (int(self.band) if self.band is not None else None),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SynchronizationConfig":
+        if not isinstance(d, dict):
+            return cls()
+
+        a = d.get("algorithm", None)
+        algorithm = AlignmentAlgorithm.DTW
+        if isinstance(a, str):
+            # Name-lookup ("DTW") oder Value-lookup (falls value==name nicht gilt)
+            if a in AlignmentAlgorithm.__members__:
+                algorithm = AlignmentAlgorithm[a]
+            else:
+                for e in AlignmentAlgorithm:
+                    if e.value == a:
+                        algorithm = e
+                        break
+
+        min_sim = d.get("min_sim", None)
+        if min_sim is not None:
+            try:
+                min_sim = float(min_sim)
+            except Exception:
+                min_sim = None
+
+        band = d.get("band", None)
+        if band is not None:
+            try:
+                band = int(band)
+            except Exception:
+                band = None
+
+        return cls(
+            algorithm=algorithm,
+            step_v=float(d.get("step_v", 0.10)),
+            step_h=float(d.get("step_h", 0.12)),
+            min_sim=min_sim,
+            big_cost=float(d.get("big_cost", 1e6)),
+            band=band,
+        )
 
 @dataclass
 class SynchronizationResult:

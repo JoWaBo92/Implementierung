@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import unicodedata
 import re
 
+import base64
+
 import spacy
 from spacy.language import Language
 from spacy.tokens import Doc
@@ -16,11 +18,19 @@ class PreprocessingConfig:
         self.keep_punct: bool = keep_punct
 
     def to_dict(self):
-        return {"spacy_model": self.spacy_model}
+        return {
+            "spacy_model": self.spacy_model,
+            "lowercase": self.lowercase,
+            "keep_punct": self.keep_punct
+            }
 
     @classmethod
     def from_dict(cls, d: dict) -> "PreprocessingConfig":
-        return cls(spacy_model=d.get("spacy_model", "de_core_news_md"))
+        return cls(
+        spacy_model=d.get("spacy_model", "de_core_news_md"),
+        lowercase=bool(d.get("lowercase", False)),
+        keep_punct=bool(d.get("keep_punct", True)),
+    )
 
 class Token:
     def __init__(self, t:spacy.tokens.token.Token):
@@ -58,22 +68,55 @@ class PreprocessingResult:
         self.raw_text: str = ""
         self.clean_text: str = ""
         self.tokens: List[Token] = []
-        self.config = None
-        self.doc = None
+        self.config: PreprocessingConfig = None
+        self.doc: Optional[Doc] = None
 
     def to_dict(self):
-        return {
+        d = {
             "raw_text": self.raw_text,
             "clean_text": self.clean_text,
             "tokens": [t.to_dict() for t in self.tokens],
+            "config": self.config.to_dict() if self.config else None,
         }
+
+        if self.doc is not None:
+            b = self.doc.to_bytes()                   
+            d["doc_bytes_b64"] = base64.b64encode(b).decode("ascii")
+
+        return d
     
     @classmethod
-    def from_dict(cls, d: dict) -> "PreprocessingResult":
+    def from_dict(cls, d: dict, nlp) -> "PreprocessingResult":
         obj = cls()
         obj.raw_text = d.get("raw_text", "")
         obj.clean_text = d.get("clean_text", "")
-        obj.tokens = [Token.from_dict(td) for td in d.get("tokens", [])]
+        obj.config = PreprocessingConfig.from_dict(d.get("config") or {})
+
+        doc_b64 = d.get("doc_bytes_b64")
+        if doc_b64:
+            doc_bytes = base64.b64decode(doc_b64.encode("ascii"))
+            doc = Doc(nlp.vocab) 
+            doc = doc.from_bytes(doc_bytes)
+            obj.doc = doc
+
+            obj.tokens = []
+            for t in doc:
+                if t.is_space:
+                    continue
+                if (not obj.config.keep_punct) and t.is_punct:
+                    continue
+                obj.tokens.append(Token(t))
+        else:
+            doc = nlp(obj.clean_text)
+            obj.doc = doc
+            obj.tokens = []
+            for t in doc:
+                if t.is_space:
+                    continue
+                if (not obj.config.keep_punct) and t.is_punct:
+                    continue
+                obj.tokens.append(Token(t))
+
         return obj
 
 class PipelineStage(ABC):

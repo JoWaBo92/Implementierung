@@ -6,11 +6,13 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 
 from domain.project import Project
+from utils import BaseTab, TableUtils
 
 
-class ProjectTab(QWidget):
+class ProjectTab(QWidget, BaseTab):
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
+        self._init_base_tab(project, parent)
 
         self.project = project
 
@@ -41,9 +43,13 @@ class ProjectTab(QWidget):
 
         self.table_transcript = QTableWidget(0, 3)
         self.table_transcript.setHorizontalHeaderLabels(["Index", "Speaker", "Text"])
-        self._configure_table(self.table_transcript)
 
-        self.table_transcript.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(self.table_transcript)
+        TableUtils.configure_table_fill(
+            self.table_transcript,
+            resize_cols=[0, 1],   
+            text_cols=[2],        
+        )
 
         layout.addWidget(self.table_transcript)
         return box
@@ -54,9 +60,13 @@ class ProjectTab(QWidget):
 
         self.table_asr = QTableWidget(0, 2)
         self.table_asr.setHorizontalHeaderLabels(["Time", "Segments"])
-        self._configure_table(self.table_asr)
-
-        self.table_asr.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        
+        TableUtils.configure_table_basic(self.table_asr)
+        TableUtils.configure_table_fill(
+            self.table_asr,
+            resize_cols=[0],  
+            text_cols=[1],   
+        )
 
         layout.addWidget(self.table_asr)
         return box
@@ -87,17 +97,6 @@ class ProjectTab(QWidget):
         self._fill_asr_table(extract)
 
     # ---------- Internal helpers ----------
-    def _configure_table(self, table: QTableWidget):
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-
-        header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QHeaderView.Interactive)
-
     def _clear_table(self, tbl: QTableWidget):
         tbl.setRowCount(0)
 
@@ -116,7 +115,6 @@ class ProjectTab(QWidget):
             self.table_transcript.setItem(r, 1, QTableWidgetItem(str(speaker)))
             self.table_transcript.setItem(r, 2, QTableWidgetItem(str(text)))
 
-        # self.table_transcript.resizeColumnsToContents()
 
     def _fill_asr_table(self, extract):
         self._clear_table(self.table_asr)
@@ -130,5 +128,3 @@ class ProjectTab(QWidget):
         for r in range(n):
             self.table_asr.setItem(r, 0, QTableWidgetItem(str(times[r])))
             self.table_asr.setItem(r, 1, QTableWidgetItem(str(segs[r])))
-
-        # self.table_asr.resizeColumnsToContents()

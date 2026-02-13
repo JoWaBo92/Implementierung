@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
@@ -14,9 +12,13 @@ from typing import List, Optional, Any
 from domain.project import Project, SynchronizationResultCollection
 from domain.synchronization import SynchronizationCalculator, SynchronizationConfig
 
-class SynchronizationTab(QWidget):
+from utils import BaseTab, TableUtils
+
+
+class SynchronizationTab(QWidget, BaseTab):
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
+        self._init_base_tab(project, parent)
 
         self.project = project
 
@@ -173,10 +175,13 @@ class SynchronizationTab(QWidget):
 
         self.table_history = QTableWidget(0, 4)
         self.table_history.setHorizontalHeaderLabels(["Zeit", "Verfahren", "Optionen", "Qualität"])
-        self._configure_table(self.table_history)
-        self.table_history.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table_history.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.table_history.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+
+        TableUtils.configure_table_basic(self.table_history)
+        TableUtils.configure_table_fill(
+            self.table_history,
+            resize_cols=[],
+            text_cols=[0, 1, 2, 3],
+        )
 
         layout.addWidget(self.table_history)
         return box
@@ -187,12 +192,13 @@ class SynchronizationTab(QWidget):
 
         self.table_transcript = QTableWidget(0, 6)
         self.table_transcript.setHorizontalHeaderLabels(["#", "Normalisiert", "ASR-Bereich", "Ø-Score", "Start", "Ende"])
-        self._configure_table(self.table_transcript)
-        self.table_transcript.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table_transcript.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.table_transcript.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.table_transcript.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self.table_transcript.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        
+        TableUtils.configure_table_basic(self.table_transcript)
+        TableUtils.configure_table_fill(
+            self.table_transcript,
+            resize_cols=[0, 2, 3, 4, 5],
+            text_cols=[1],
+        )
 
         layout.addWidget(self.table_transcript)
         return box
@@ -203,12 +209,13 @@ class SynchronizationTab(QWidget):
 
         self.table_extract = QTableWidget(0, 5)
         self.table_extract.setHorizontalHeaderLabels(["#", "Normalisiert", "Similarity", "Pfad", "Zeit"])
-        self._configure_table(self.table_extract)
 
-        self.table_extract.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table_extract.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.table_extract.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.table_extract.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(self.table_extract)
+        TableUtils.configure_table_fill(
+            self.table_extract,
+            resize_cols=[0, 2, 3, 4],
+            text_cols=[1],
+        )
 
         layout.addWidget(self.table_extract)
         return box
@@ -227,16 +234,6 @@ class SynchronizationTab(QWidget):
         mmm = ms % 1000
         return f"{hh:02d}:{mm:02d}:{ss:02d}.{mmm:03d}"
 
-    def _configure_table(self, table: QTableWidget):
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-
-        header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QHeaderView.Stretch)
 
     def _clear_table(self, table: QTableWidget):
         table.setRowCount(0)
@@ -307,7 +304,14 @@ class SynchronizationTab(QWidget):
             table.blockSignals(False)
 
         # Auto-select current (falls gesetzt), sonst letztes Ergebnis
+        # Auto-select current (falls gesetzt), sonst letztes Ergebnis
         if len(results) > 0:
+            idx = len(results) - 1
+            cur = getattr(getattr(self.project, "current", None), "synchronization", None)
+            if cur in results:
+                idx = results.index(cur)
+            table.selectRow(idx)
+            self._show_history_index(idx)
             idx = len(results) - 1
             cur = getattr(getattr(self.project, "current", None), "synchronization", None)
             if cur in results:
@@ -431,9 +435,12 @@ class SynchronizationTab(QWidget):
         def _move_label(m: str) -> str:
             if m == "diag":
                 return "?"
+                return "?"
             if m == "left":
                 return "?"
+                return "?"
             if m == "up":
+                return "?"
                 return "?"
             if m == "start":
                 return "S"
@@ -498,7 +505,13 @@ class SynchronizationTab(QWidget):
         # Ergebnis wählen: project.current.synchronization bevorzugen, sonst letztes Ergebnis
         cur = getattr(getattr(self.project, "current", None), "synchronization", None)
         selected = cur if (cur in results) else results[-1]
+        # Ergebnis wählen: project.current.synchronization bevorzugen, sonst letztes Ergebnis
+        cur = getattr(getattr(self.project, "current", None), "synchronization", None)
+        selected = cur if (cur in results) else results[-1]
 
+        # update project.current (nur setzen, wenn noch nichts gewählt)
+        if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
+            setattr(self.project.current, "synchronization", selected)
         # update project.current (nur setzen, wenn noch nichts gewählt)
         if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
             setattr(self.project.current, "synchronization", selected)
@@ -508,7 +521,12 @@ class SynchronizationTab(QWidget):
         self.sim_matrix = getattr(selected, "similarity_matrix", None)
         self.align_path = getattr(selected, "alignment_path", None)
         self.align_ranges_by_transcript = getattr(selected, "alignment_ranges_by_transcript", None)
+        self.sim_matrix = getattr(selected, "similarity_matrix", None)
+        self.align_path = getattr(selected, "alignment_path", None)
+        self.align_ranges_by_transcript = getattr(selected, "alignment_ranges_by_transcript", None)
 
+        transcript_results = getattr(selected, "transcript_preprocessed", None) or []
+        extract_results = getattr(selected, "extract_preprocessed", None) or []
         transcript_results = getattr(selected, "transcript_preprocessed", None) or []
         extract_results = getattr(selected, "extract_preprocessed", None) or []
 
@@ -526,6 +544,7 @@ class SynchronizationTab(QWidget):
         # select transcript row (will NOT trigger show handler reliably if signals blocked elsewhere)
         self.table_transcript.selectRow(self.current_transcript_index)
         self._show_transcript_index(self.current_transcript_index)
+        self._show_transcript_index(self.current_transcript_index)
 
         # fill aligned extract table
         sim_row = None
@@ -541,50 +560,32 @@ class SynchronizationTab(QWidget):
     # ---------------------------------------------------------------------
 
     def _on_click_run(self):
-        from PyQt5.QtWidgets import QApplication
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            # --- 1) Guard: need deviation analysis results ---
-            dev = getattr(self.project.current, "deviation_analysis", None)
-            if dev is None:
-                QMessageBox.warning(
-                    self,
-                    "Keine Ähnlichkeitsmatrix vorhanden",
-                    "Bitte zuerst im Tab 'Abweichungsanalyse' eine Ähnlichkeitsuntersuchung durchführen."
-                )
-                return
+        # --- 1) Guard: need deviation analysis results ---
+        dev = getattr(self.project.current, "deviation_analysis", None)
+        if dev is None:
+            QMessageBox.warning(
+                self,
+                "Keine Ähnlichkeitsmatrix vorhanden",
+                "Bitte zuerst im Tab 'Abweichungsanalyse' eine Ähnlichkeitsuntersuchung durchführen.",
+            )
+            return
 
-            sim = getattr(dev, "result_matrix", None)
-            if sim is None or not isinstance(sim, np.ndarray) or sim.ndim != 2 or sim.size == 0:
-                QMessageBox.warning(
-                    self,
-                    "Ungültige Ähnlichkeitsmatrix",
-                    "Die Ähnlichkeitsmatrix fehlt oder ist leer. Bitte Abweichungsanalyse erneut ausführen."
-                )
-                return
+        sim = getattr(dev, "result_matrix", None)
+        if sim is None or not isinstance(sim, np.ndarray) or sim.ndim != 2 or sim.size == 0:
+            QMessageBox.warning(
+                self,
+                "Ungültige Ähnlichkeitsmatrix",
+                "Die Ähnlichkeitsmatrix fehlt oder ist leer. Bitte Abweichungsanalyse erneut ausführen.",
+            )
+            return
 
-            transcript_results = getattr(dev, "transcript_preprocessed", None) or []
-            extract_results = getattr(dev, "extract_preprocessed", None) or []
+        transcript_results = list(getattr(dev, "transcript_preprocessed", None) or [])
+        extract_results = list(getattr(dev, "extract_preprocessed", None) or [])
 
-            # --- 2) Map GUI presets -> numeric config (alignment only) ---
-            # ASR-Split-Toleranz (vertical steps): lower penalty => more 1:n allowed
-            step_v_map = {
-                "schwach": 0.06,  # erlaubt mehr ASR-Splits
-                "mittel":  0.10,
-                "stark":   0.18,  # bestraft viele Splits
-            }
-            # Transkript-Zusammenfassung (horizontal steps): lower penalty => more n:1 allowed
-            step_h_map = {
-                "schwach": 0.08,
-                "mittel":  0.12,
-                "stark":   0.22,
-            }
-            # Mindestähnlichkeit gating
-            min_sim_map = {
-                "niedrig": 0.10,
-                "mittel":  0.18,
-                "hoch":    0.28,
-            }
+        # --- 2) Map GUI presets -> numeric config (alignment only) ---
+        step_v_map = {"schwach": 0.06, "mittel": 0.10, "stark": 0.18}
+        step_h_map = {"schwach": 0.08, "mittel": 0.12, "stark": 0.22}
+        min_sim_map = {"niedrig": 0.10, "mittel": 0.18, "hoch": 0.28}
 
             asr_choice = (self.combo_asr_split.currentText() or "mittel").strip().lower()
             tr_choice = (self.combo_tr_merge.currentText() or "mittel").strip().lower()
@@ -599,22 +600,15 @@ class SynchronizationTab(QWidget):
                 b = int(self.spin_band.value())
                 band = b if b > 0 else 0
 
-            # --- 3) Run calculator ---
-            synch_config = SynchronizationConfig(
-                step_v=step_v,
-                step_h=step_h,
-                min_sim=min_sim,
-                band=band,
-            )
+        synch_config = SynchronizationConfig(step_v=step_v, step_h=step_h, min_sim=min_sim, band=band)
+
+        # snapshot extract times (ms) for aligned transcript build
+        extract_times_ms = [tm.time for tm in getattr(self.project.asr_extract, "times", [])]
+
+        def work():
             synch_calc = SynchronizationCalculator(config=synch_config)
+            synch_result = synch_calc.synchronize(sim)
 
-            try:
-                synch_result = synch_calc.synchronize(sim)
-            except Exception as e:
-                QMessageBox.critical(self, "Synchronisierung fehlgeschlagen", str(e))
-                return
-
-            # --- 4) Store in project context ---
             col = SynchronizationResultCollection(
                 config=synch_config,
                 transcript_preprocessed=transcript_results,
@@ -625,34 +619,41 @@ class SynchronizationTab(QWidget):
                 mean_similarity_on_path=synch_result.mean_similarity_on_path,
                 similarity_matrix=sim,
             )
-
-            extract_times_ms = [tm.time for tm in self.project.asr_extract.times]
+            col.deviation_id = self.project.current.deviation_analysis.result_id
             col.build_aligned_transcript(extract_times_ms)
+            return col, synch_result
+
+        def on_success(res):
+            col, synch_result = res
 
             self.project.synchronization_results.append(col)
             self.project.current.synchronization = col
+            self.project.synchronization_results.append(col)
+            self.project.current.synchronization = col
 
-            # Update local state
             self.results = self.project.synchronization_results
             self.sim_matrix = sim
             self.align_path = synch_result.path
             self.align_ranges_by_transcript = synch_result.ranges_by_transcript
             self.current_transcript_index = 0
 
-            # --- 5) Refresh UI
             self._fill_history_table()
             self._fill_transcript_table(transcript_results)
 
             if len(transcript_results) > 0:
                 self.table_transcript.selectRow(0)
                 self._show_transcript_index(0)
+            if len(transcript_results) > 0:
+                self.table_transcript.selectRow(0)
+                self._show_transcript_index(0)
 
-            # Actions in MainWindow aktualisieren (z.B. Export aktivieren)
-            if hasattr(self.parent(), "update_ui_state"):
-                self.parent().update_ui_state()
+        self.run_in_worker(
+            work,
+            on_success=on_success,
+            busy_widget=self.btn_run,
+            status_msg="Synchronisierung läuft…",
+        )
 
-        finally:
-            QApplication.restoreOverrideCursor()
     def _on_history_selection_changed(self, selected, deselected):
         rows = self.table_history.selectionModel().selectedRows()
         if not rows:

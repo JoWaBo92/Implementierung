@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional, Sequence, Union
@@ -47,6 +45,52 @@ class DeviationAnalysisConfig:
         self.ultra_short_tokens = ultra_short_tokens
         self.similar_position = similar_position
         self.position_gamma = position_gamma
+
+    def to_dict(self) -> dict:
+        return {
+            "library": self.library,
+            "method": getattr(self.method, "name", str(self.method)),
+            "method_value": getattr(self.method, "value", str(self.method)),
+            "similar_length": bool(self.similar_length),
+            "length_min_ratio": float(self.length_min_ratio),
+            "length_alpha": float(self.length_alpha),
+            "ultra_short_tokens": int(self.ultra_short_tokens),
+            "similar_position": bool(self.similar_position),
+            "position_gamma": float(self.position_gamma),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "DeviationAnalysisConfig":
+        if not isinstance(d, dict):
+            return cls()
+
+        m = d.get("method", None)
+        mv = d.get("method_value", None)
+        method = DeviationMethod.STANDARD
+        if isinstance(m, str):
+            if m in DeviationMethod.__members__:
+                method = DeviationMethod[m]
+            else:
+                # fallback: value-lookup
+                for e in DeviationMethod:
+                    if e.value == m:
+                        method = e
+                        break
+        elif isinstance(mv, str):
+            for e in DeviationMethod:
+                if e.value == mv:
+                    method = e
+                    break
+        return cls(
+            library=d.get("library", "de_core_news_md"),
+            method=method,
+            similar_length=bool(d.get("similar_length", False)),
+            length_min_ratio=float(d.get("length_min_ratio", 0.20)),
+            length_alpha=float(d.get("length_alpha", 0.75)),
+            ultra_short_tokens=int(d.get("ultra_short_tokens", 2)),
+            similar_position=bool(d.get("similar_position", False)),
+            position_gamma=float(d.get("position_gamma", 4.0)),
+        )
 
 
 class DeviationCalculator:

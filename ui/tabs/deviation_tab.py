@@ -17,9 +17,12 @@ from domain.project import Project, PreprocessingResultCollection, DeviationResu
 from domain.preprocessing import PreprocessingResult, PreprocessingConfig, PreprocessingPipeline
 from domain.deviation import DeviationCalculator, DeviationAnalysisConfig, DeviationMethod
 
-class DeviationTab(QWidget):
+from utils import BaseTab, TableUtils
+
+class DeviationTab(QWidget, BaseTab):
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
+        self._init_base_tab(project, parent)
 
         self.project = project
 
@@ -150,8 +153,12 @@ class DeviationTab(QWidget):
         self.table_history = QTableWidget(0, 4)
         self.table_history.setHorizontalHeaderLabels(["Zeit", "Methode", "Länge", "Position"])
 
-        self._configure_table(self.table_history)
-        self.table_history.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(self.table_history)
+        TableUtils.configure_table_fill(
+            self.table_history,
+            resize_cols=[2, 3],  
+            text_cols=[0, 1],    
+        )
 
         layout.addWidget(self.table_history)
         return box
@@ -163,8 +170,12 @@ class DeviationTab(QWidget):
         self.table_transcript = QTableWidget(0, 2)
         self.table_transcript.setHorizontalHeaderLabels(["#", "Normalisiert"])
 
-        self._configure_table(self.table_transcript)
-        self.table_transcript.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(self.table_transcript)
+        TableUtils.configure_table_fill(
+            self.table_transcript,
+            resize_cols=[0],  
+            text_cols=[1],    
+        )
 
         layout.addWidget(self.table_transcript)
         return box
@@ -176,8 +187,12 @@ class DeviationTab(QWidget):
         self.table_extract = QTableWidget(0, 3)
         self.table_extract.setHorizontalHeaderLabels(["#", "Normalisiert", "Ähnlichkeit"])
 
-        self._configure_table(self.table_extract)
-        self.table_extract.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(self.table_extract)
+        TableUtils.configure_table_fill(
+            self.table_extract,
+            resize_cols=[0, 2],  
+            text_cols=[1],          
+        )
 
         layout.addWidget(self.table_extract)
         return box
@@ -194,15 +209,8 @@ class DeviationTab(QWidget):
         self.combo_pos_strength.setEnabled(self.chk_pos_in_src.isChecked())
 
     def _configure_table(self, table: QTableWidget):
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-
-        header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QHeaderView.Stretch)
+        TableUtils.configure_table_basic(table)
+        TableUtils.configure_all_interactive(table)
 
     def _clear_table(self, table: QTableWidget):
         table.setRowCount(0)
@@ -388,31 +396,36 @@ class DeviationTab(QWidget):
         self._fill_combo_method()
 
     def _on_click_run(self):
-        from PyQt5.QtWidgets import QApplication
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            if not self.combo_language_model.isEnabled():
-                QMessageBox.warning(self, "Keine Preprocessing-Ergebnisse vorhanden.", 
-                    "Zur Durchführung der Abweichungsanalyse zunächst ein Preprocessing durchführen.")
-                return
+        if not self.combo_language_model.isEnabled():
+            QMessageBox.warning(
+                self,
+                "Keine Preprocessing-Ergebnisse vorhanden.",
+                "Zur Durchführung der Abweichungsanalyse zunächst ein Preprocessing durchführen.",
+            )
+            return
 
-            if self.combo_language_model.currentText() == DeviationMethod.SENT_TRF.value:
-                library = "paraphrase-multilingual-MiniLM-L12-v2"
-                method = DeviationMethod.SENT_TRF
-            else:
-                library = self.project.current.preprocessing.config.spacy_model
-                method = DeviationMethod.TRF if self.combo_language_model.currentText() == DeviationMethod.TRF.value else DeviationMethod.STANDARD
+        # Build config from GUI (GUI thread)
+        if self.combo_language_model.currentText() == DeviationMethod.SENT_TRF.value:
+            library = "paraphrase-multilingual-MiniLM-L12-v2"
+            method = DeviationMethod.SENT_TRF
+        else:
+            library = self.project.current.preprocessing.config.spacy_model
+            method = (
+                DeviationMethod.TRF
+                if self.combo_language_model.currentText() == DeviationMethod.TRF.value
+                else DeviationMethod.STANDARD
+            )
 
             gamma_map = {"schwach": 2.5, "mittel": 4.0, "stark": 7.0}
             gamma = float(gamma_map.get(self.combo_pos_strength.currentText(), 4.0))
 
-            len_preset = self.combo_len_strength.currentText().lower()
-            len_map = {
-                "schwach": dict(min_ratio=0.20, alpha=0.75, ultra_short_tokens=2),
-                "mittel":  dict(min_ratio=0.35, alpha=1.50, ultra_short_tokens=2),
-                "stark":   dict(min_ratio=0.50, alpha=2.50, ultra_short_tokens=2),
-            }
-            lp = len_map.get(len_preset, len_map["mittel"])
+        len_preset = self.combo_len_strength.currentText().lower()
+        len_map = {
+            "schwach": dict(min_ratio=0.20, alpha=0.75, ultra_short_tokens=2),
+            "mittel": dict(min_ratio=0.35, alpha=1.50, ultra_short_tokens=2),
+            "stark": dict(min_ratio=0.50, alpha=2.50, ultra_short_tokens=2),
+        }
+        lp = len_map.get(len_preset, len_map["mittel"])
 
             config = DeviationAnalysisConfig(
                 library=library,
@@ -425,43 +438,55 @@ class DeviationTab(QWidget):
                 position_gamma=gamma,
             )
 
+        transcript_results = list(self.project.current.preprocessing.transcript_results)
+        extract_results = list(self.project.current.preprocessing.extract_results)
+        transcript_docs = [r.doc for r in transcript_results]
+        extract_docs = [r.doc for r in extract_results]
+
+        def work():
             calc = DeviationCalculator(config)
+            sim_matrix = calc.similarity_matrix(transcript_docs, extract_docs)
+            return sim_matrix
 
-            transcript_results = self.project.current.preprocessing.transcript_results
-            extract_results = self.project.current.preprocessing.extract_results
-
-            transcript_docs = [r.doc for r in transcript_results]
-            extract_docs = [r.doc for r in extract_results]
-
-            self.sim_matrix = calc.similarity_matrix(transcript_docs, extract_docs)
+        def on_success(sim_matrix):
+            self.sim_matrix = sim_matrix
 
             result_collection = DeviationResultCollection(config=config)
             result_collection.result_matrix = self.sim_matrix
             result_collection.extract_preprocessed = extract_results
             result_collection.transcript_preprocessed = transcript_results
+            result_collection.preprocessing_id = self.project.current.preprocessing.result_id
+
             self.project.deviation_analysis_results.append(result_collection)
             self.project.current.deviation_analysis = result_collection
-        
+
             self._fill_transcript_segment_table(self.table_transcript, transcript_results)
 
             self.current_transcript_index = 0
             if len(transcript_results) > 0:
                 self.table_transcript.selectRow(0)
+            self.current_transcript_index = 0
+            if len(transcript_results) > 0:
+                self.table_transcript.selectRow(0)
 
             if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(extract_results) > 0:
-                sim_row = self.sim_matrix[self.current_transcript_index, :]  # 1D: len(extract)
+                sim_row = self.sim_matrix[self.current_transcript_index, :]
                 self._fill_extract_segment_table(self.table_extract, extract_results, sim_row)
             else:
                 self._clear_table(self.table_extract)
 
             self._fill_history_table()
             print("Deviation analysis done")
+            self._fill_history_table()
+            print("Deviation analysis done")
 
-            if hasattr(self.parent(), "update_ui_state"):
-                self.parent().update_ui_state()
+        self.run_in_worker(
+            work,
+            on_success=on_success,
+            busy_widget=self.btn_run,
+            status_msg="Abweichungsanalyse läuft…",
+        )
 
-        finally:
-            QApplication.restoreOverrideCursor()
     def _on_history_selection_changed(self, selected, deselected):
         rows = self.table_history.selectionModel().selectedRows()
         if not rows:

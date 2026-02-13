@@ -12,10 +12,12 @@ from typing import List
 
 from domain.project import Project, PreprocessingResultCollection
 from domain.preprocessing import PreprocessingResult, PreprocessingConfig, PreprocessingPipeline
+from utils import BaseTab, TableUtils
 
-class PreprocessingTab(QWidget):
+class PreprocessingTab(QWidget, BaseTab):
     def __init__(self, project: Project, parent=None):
         super().__init__(parent)
+        self._init_base_tab(project, parent)
 
         self.project = project
 
@@ -113,8 +115,12 @@ class PreprocessingTab(QWidget):
         self.table_history = QTableWidget(0, 4)
         self.table_history.setHorizontalHeaderLabels(["Zeit", "Modell", "Klein", "Punkt"])
 
-        self._configure_table(self.table_history)
-        self.table_history.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(self.table_history)
+        TableUtils.configure_table_fill(
+            self.table_history,
+            resize_cols=[2, 3],   
+            text_cols=[0, 1],     
+        )
 
         layout.addWidget(self.table_history)
         return box
@@ -126,8 +132,12 @@ class PreprocessingTab(QWidget):
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["#", "Original", "Normalisiert", "Tokens"])
 
-        self._configure_table(table)
-        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        TableUtils.configure_table_basic(table)
+        TableUtils.configure_table_fill(
+            table,
+            resize_cols=[0],      
+            text_cols=[1, 2, 3],  
+        )
 
         layout.addWidget(table)
         return box, table
@@ -139,17 +149,6 @@ class PreprocessingTab(QWidget):
         self._fill_all_tables_with_latest()
 
     # ----------- Internal helpers ------------
-    def _configure_table(self, table: QTableWidget):
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        table.setSelectionMode(QAbstractItemView.SingleSelection)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-
-        header = table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(QHeaderView.Stretch)
-
     def _clear_table(self, table: QTableWidget):
         table.setRowCount(0)
 
@@ -197,13 +196,18 @@ class PreprocessingTab(QWidget):
             self._show_history_index(last)
 
     def _fill_all_tables_with_latest(self):
-        if len(self.project.preprocessing_results) > 0:
-            pre_result_transcript = self.project.preprocessing_results[-1].transcript_results
-            pre_result_extract = self.project.preprocessing_results[-1].extract_results
-            self._fill_result_table(self.table_transcript_result, pre_result_transcript)
-            self._fill_result_table(self.table_extract_result, pre_result_extract)
+        self._clear_table(self.table_transcript_result)
+        self._clear_table(self.table_extract_result)
+        self._clear_table(self.table_history)
 
-            self._fill_history_table()
+        if len(self.project.preprocessing_results) == 0:
+            return
+
+        pre_result_transcript = self.project.preprocessing_results[-1].transcript_results
+        pre_result_extract = self.project.preprocessing_results[-1].extract_results
+        self._fill_result_table(self.table_transcript_result, pre_result_transcript)
+        self._fill_result_table(self.table_extract_result, pre_result_extract)
+        self._fill_history_table()
 
     def _fill_combo_language_model(self):
         models = sorted(get_installed_models())
@@ -231,53 +235,70 @@ class PreprocessingTab(QWidget):
         self._fill_combo_language_model()
 
     def _on_click_run(self):
-        from PyQt5.QtWidgets import QApplication
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            if not self.combo_language_model.isEnabled():
-                QMessageBox.warning(self, "Kein spaCy-Modell installiert.", 
-                    "Zur Durchführung des Preprocessings bitte mindestens ein spaCy-Sprachmodell installieren")
-                return
-        
-            transcript = getattr(self.project, "transcript", None)
-            if not transcript:
-                QMessageBox.warning(self, "Kein Transcript vorhanden.",
-                    "Zur Durchführung des Preprocessings bitte eine Transcript-Datei laden")
-                return
-        
-            extract = getattr(self.project, "asr_extract", None)
-            if not extract:
-                QMessageBox.warning(self, "Kein ASR-Extrakt vorhanden.",
-                    "Zur Durchführung des Preprocessings bitte eine ASR-Extrakt-Datei laden")
-                return
+        # Guards in GUI thread
+        if not self.combo_language_model.isEnabled():
+            QMessageBox.warning(
+                self,
+                "Kein spaCy-Modell installiert.",
+                "Zur Durchführung des Preprocessings bitte mindestens ein spaCy-Sprachmodell installieren",
+            )
+            return
 
-            pipe_config = PreprocessingConfig(
-                spacy_model=self.combo_language_model.currentText(), 
-                lowercase=self.chk_lowercase.isChecked(), 
-                keep_punct=self.chk_keep_punct.isChecked()
-                )
+        transcript = getattr(self.project, "transcript", None)
+        if not transcript:
+            QMessageBox.warning(
+                self,
+                "Kein Transcript vorhanden.",
+                "Zur Durchführung des Preprocessings bitte eine Transcript-Datei laden",
+            )
+            return
+
+        extract = getattr(self.project, "asr_extract", None)
+        if not extract:
+            QMessageBox.warning(
+                self,
+                "Kein ASR-Extrakt vorhanden.",
+                "Zur Durchführung des Preprocessings bitte eine ASR-Extrakt-Datei laden",
+            )
+            return
+
+        pipe_config = PreprocessingConfig(
+            spacy_model=self.combo_language_model.currentText(),
+            lowercase=self.chk_lowercase.isChecked(),
+            keep_punct=self.chk_keep_punct.isChecked(),
+        )
+
+        # Snapshot inputs (avoid touching GUI objects in worker)
+        transcript_segments = list(self.project.transcript.segments)
+        extract_segments = list(self.project.asr_extract.segments)
+
+        def work():
             pipe = PreprocessingPipeline(config=pipe_config)
-            pre_result_transcript = pipe.run_batch(self.project.transcript.segments)
-            pre_result_extract = pipe.run_batch(self.project.asr_extract.segments)
+            pre_result_transcript = pipe.run_batch(transcript_segments)
+            pre_result_extract = pipe.run_batch(extract_segments)
+            return pre_result_transcript, pre_result_extract
+
+        def on_success(res):
+            pre_result_transcript, pre_result_extract = res
 
             result_collection = PreprocessingResultCollection(config=pipe_config)
             result_collection.transcript_results = pre_result_transcript
             result_collection.extract_results = pre_result_extract
+
             self.project.preprocessing_results.append(result_collection)
             self.project.current.preprocessing = result_collection
 
             self._fill_result_table(self.table_transcript_result, pre_result_transcript)
             self._fill_result_table(self.table_extract_result, pre_result_extract)
-
             self._fill_history_table()
             print("Preprocessing done")
 
-            if hasattr(self.parent(), "update_ui_state"):
-                self.parent().update_ui_state()
-
-        finally:
-            QApplication.restoreOverrideCursor()
-
+        self.run_in_worker(
+            work,
+            on_success=on_success,
+            busy_widget=self.btn_run,
+            status_msg="Preprocessing läuft…",
+        )
 
     def _on_history_selection_changed(self, selected, deselected):
         rows = self.table_history.selectionModel().selectedRows()
