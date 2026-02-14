@@ -445,14 +445,11 @@ class SynchronizationTab(QWidget, BaseTab):
 
         def _move_label(m: str) -> str:
             if m == "diag":
-                return "?"
-                return "?"
+                return "↘"
             if m == "left":
-                return "?"
-                return "?"
+                return "→"
             if m == "up":
-                return "?"
-                return "?"
+                return "↓"
             if m == "start":
                 return "S"
             return ""

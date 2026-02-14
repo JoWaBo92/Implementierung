@@ -38,11 +38,11 @@ class ProjectTab(QWidget, BaseTab):
         root.addWidget(self.splitter_main)
 
     def _build_transcript_box(self) -> QGroupBox:
-        box = QGroupBox("Transcript")
+        box = QGroupBox("Manuelles Transkript")
         layout = QVBoxLayout(box)
 
         self.table_transcript = QTableWidget(0, 3)
-        self.table_transcript.setHorizontalHeaderLabels(["Index", "Speaker", "Text"])
+        self.table_transcript.setHorizontalHeaderLabels(["Index", "Sprecher", "Text"])
 
         TableUtils.configure_table_basic(self.table_transcript)
         TableUtils.configure_table_fill(
@@ -58,14 +58,14 @@ class ProjectTab(QWidget, BaseTab):
         box = QGroupBox("ASR-Extract")
         layout = QVBoxLayout(box)
 
-        self.table_asr = QTableWidget(0, 2)
-        self.table_asr.setHorizontalHeaderLabels(["Time", "Segments"])
+        self.table_asr = QTableWidget(0, 4)
+        self.table_asr.setHorizontalHeaderLabels(["Index", "Zeit", "Sprecher", "Text"])
         
         TableUtils.configure_table_basic(self.table_asr)
         TableUtils.configure_table_fill(
             self.table_asr,
-            resize_cols=[0],  
-            text_cols=[1],   
+            resize_cols=[0, 1, 2],  
+            text_cols=[3],   
         )
 
         layout.addWidget(self.table_asr)
@@ -126,5 +126,12 @@ class ProjectTab(QWidget, BaseTab):
         self.table_asr.setRowCount(n)
 
         for r in range(n):
-            self.table_asr.setItem(r, 0, QTableWidgetItem(str(times[r])))
-            self.table_asr.setItem(r, 1, QTableWidgetItem(str(segs[r])))
+            seg = segs[r]
+            idx = getattr(seg, "index", r)
+            speaker = getattr(seg, "speaker", "")
+            text = getattr(seg, "text", str(seg))
+
+            self.table_asr.setItem(r, 0, QTableWidgetItem(str(idx)))
+            self.table_asr.setItem(r, 1, QTableWidgetItem(str(times[r])))
+            self.table_asr.setItem(r, 2, QTableWidgetItem(str(speaker)))
+            self.table_asr.setItem(r, 3, QTableWidgetItem(str(text)))
