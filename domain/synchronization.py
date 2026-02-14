@@ -51,7 +51,6 @@ class SynchronizationConfig:
         a = d.get("algorithm", None)
         algorithm = AlignmentAlgorithm.DTW
         if isinstance(a, str):
-            # Name-lookup ("DTW") oder Value-lookup (falls value==name nicht gilt)
             if a in AlignmentAlgorithm.__members__:
                 algorithm = AlignmentAlgorithm[a]
             else:

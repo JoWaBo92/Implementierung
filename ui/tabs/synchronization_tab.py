@@ -22,11 +22,12 @@ class SynchronizationTab(QWidget, BaseTab):
 
         self.project = project
 
-        self.results: List[Any] = []                 
+        self.results: List[SynchronizationResultCollection] = []                 
         self.sim_matrix: Optional[np.ndarray] = None 
         self.align_path: Optional[list] = None       
         self.align_ranges_by_transcript: Optional[list] = None  
         self.current_transcript_index: int = 0
+        self._history_results: List[SynchronizationResultCollection] = []
 
         root = QHBoxLayout(self)
 
@@ -238,6 +239,17 @@ class SynchronizationTab(QWidget, BaseTab):
     def _clear_table(self, table: QTableWidget):
         table.setRowCount(0)
 
+    def _get_filtered_sync_results(self) -> List[SynchronizationResultCollection]:
+
+        all_results = list(getattr(self.project, "synchronization_results", []) or [])
+        cur_dev = getattr(getattr(self.project, "current", None), "deviation_analysis", None)
+        if cur_dev is None:
+            return []
+        dev_id = getattr(cur_dev, "result_id", None)
+        if dev_id is None:
+            return []
+        return [r for r in all_results if getattr(r, "deviation_id", None) == dev_id]
+
     # ---------------------------------------------------------------------
     # Fillers (implemented step-by-step later)
     # ---------------------------------------------------------------------
@@ -245,9 +257,8 @@ class SynchronizationTab(QWidget, BaseTab):
     def _fill_history_table(self):
         table = self.table_history
 
-        results = []
-        if self.project and hasattr(self.project, "synchronization_results") and self.project.synchronization_results:
-            results = self.project.synchronization_results
+        results = self._get_filtered_sync_results()
+        self._history_results = results
 
         table.blockSignals(True)
         try:
@@ -495,25 +506,30 @@ class SynchronizationTab(QWidget, BaseTab):
             self._clear_table(self.table_extract)
             return
 
-        results = getattr(self.project, "synchronization_results", None) or []
+        results = self._get_filtered_sync_results()
+        self._history_results = results
+        
         if len(results) == 0:
+            if getattr(self.project, "current", None) is not None:
+                self.project.current.synchronization = None
             self._clear_table(self.table_history)
             self._clear_table(self.table_transcript)
             self._clear_table(self.table_extract)
             return
 
-        # Ergebnis wählen: project.current.synchronization bevorzugen, sonst letztes Ergebnis
         cur = getattr(getattr(self.project, "current", None), "synchronization", None)
         selected = cur if (cur in results) else results[-1]
         # Ergebnis wählen: project.current.synchronization bevorzugen, sonst letztes Ergebnis
         cur = getattr(getattr(self.project, "current", None), "synchronization", None)
         selected = cur if (cur in results) else results[-1]
 
-        # update project.current (nur setzen, wenn noch nichts gewählt)
         if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
             setattr(self.project.current, "synchronization", selected)
         # update project.current (nur setzen, wenn noch nichts gewählt)
         if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
+            setattr(self.project.current, "synchronization", selected)
+
+        if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) not in results:
             setattr(self.project.current, "synchronization", selected)
 
         # cache locally
@@ -663,10 +679,10 @@ class SynchronizationTab(QWidget, BaseTab):
 
 
     def _show_history_index(self, row: int):
-        if not self.project or not getattr(self.project, "synchronization_results", None):
+        if not self.project:
             return
 
-        results = self.project.synchronization_results
+        results = self._history_results
         if row < 0 or row >= len(results):
             return
 

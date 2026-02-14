@@ -268,7 +268,6 @@ class PreprocessingTab(QWidget, BaseTab):
             keep_punct=self.chk_keep_punct.isChecked(),
         )
 
-        # Snapshot inputs (avoid touching GUI objects in worker)
         transcript_segments = list(self.project.transcript.segments)
         extract_segments = list(self.project.asr_extract.segments)
 
@@ -306,6 +305,17 @@ class PreprocessingTab(QWidget, BaseTab):
             return
         self._show_history_index(rows[0].row())
         self.project.current.preprocessing = self.project.preprocessing_results[rows[0].row()]
+
+        self.project.current.deviation_analysis = None
+        self.project.current.synchronization = None
+
+        win = self.window()
+        if hasattr(win, "tab_deviation"):
+            win.tab_deviation._fill_all_tables_with_latest()
+        if hasattr(win, "tab_alignment"):
+            win.tab_alignment._fill_all_tables_with_latest()
+        if hasattr(win, "update_ui_state"):
+            win.update_ui_state()
 
     def _show_history_index(self, row: int):
         if not self.project or not getattr(self.project, "preprocessing_results", None):

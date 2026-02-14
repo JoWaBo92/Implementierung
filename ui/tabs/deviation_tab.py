@@ -29,6 +29,7 @@ class DeviationTab(QWidget, BaseTab):
         self.results: List[PreprocessingResult] = []
         self.sim_matrix: Optional[np.ndarray] = None   # shape: (n_transcript, n_extract)
         self.current_transcript_index: int = 0
+        self._history_results: List[DeviationResultCollection] = []
 
         root = QHBoxLayout(self)
 
@@ -215,6 +216,21 @@ class DeviationTab(QWidget, BaseTab):
     def _clear_table(self, table: QTableWidget):
         table.setRowCount(0)
 
+    def _get_filtered_deviation_results(self) -> List[DeviationResultCollection]:
+        results: List[DeviationResultCollection] = []
+        if self.project and getattr(self.project, "deviation_analysis_results", None):
+            results = list(self.project.deviation_analysis_results)
+
+        cur_pre = getattr(getattr(self.project, "current", None), "preprocessing", None)
+        if cur_pre is None:
+            return results
+
+        pre_id = getattr(cur_pre, "result_id", None)
+        if pre_id is None:
+            return results
+
+        return [r for r in results if getattr(r, "preprocessing_id", None) == pre_id]
+
     def _fill_transcript_segment_table(self, table: QTableWidget, segments: List):
         self._clear_table(table)
         table.setRowCount(len(segments))
@@ -279,7 +295,8 @@ class DeviationTab(QWidget, BaseTab):
 
     def _fill_history_table(self):
         table = self.table_history
-        results: List[DeviationResultCollection] = self.project.deviation_analysis_results
+        results: List[DeviationResultCollection] = self._get_filtered_deviation_results()
+        self._history_results = results
 
         def _position_label(config: DeviationAnalysisConfig) -> str:
             if not getattr(config, "similar_position", False):
@@ -333,31 +350,47 @@ class DeviationTab(QWidget, BaseTab):
             table.blockSignals(False)
 
         if len(results) > 0:
-            last = len(results) - 1
-            table.selectRow(last)
-            self._show_history_index(last)
+            idx = len(results) - 1
+            cur = getattr(getattr(self.project, "current", None), "deviation_analysis", None)
+            if cur in results:
+                idx = results.index(cur)
+            table.selectRow(idx)
+            self._show_history_index(idx)
 
     def _fill_all_tables_with_latest(self):
-        if not self.project or not getattr(self.project, "deviation_analysis_results", None):
+        if not self.project:
+            self._clear_table(self.table_transcript)
+            self._clear_table(self.table_extract)
+            self._clear_table(self.table_history)
             return
-        
-        results = self.project.deviation_analysis_results
+
+        results = self._get_filtered_deviation_results()
         if len(results) == 0:
+            if getattr(self.project, "current", None) is not None:
+                self.project.current.deviation_analysis = None
+                self.project.current.synchronization = None
+            self.sim_matrix = None
             self._clear_table(self.table_transcript)
             self._clear_table(self.table_extract)
             self._fill_history_table()
             return
 
-        last: DeviationResultCollection = results[-1]
+        cur = getattr(getattr(self.project, "current", None), "deviation_analysis", None)
+        selected: DeviationResultCollection = cur if (cur in results) else results[-1]
 
-        self.project.current.deviation_analysis = last
-        self.sim_matrix = last.result_matrix
+        if getattr(self.project, "current", None) is not None and getattr(self.project.current, "deviation_analysis", None) is None:
+             setattr(self.project.current, "deviation_analysis", selected)
+
+        if getattr(self.project, "current", None) is not None and getattr(self.project.current, "deviation_analysis", None) not in results:
+            setattr(self.project.current, "deviation_analysis", selected)
+
+        self.sim_matrix = selected.result_matrix
         self.current_transcript_index = 0
 
-        self._fill_transcript_segment_table(self.table_transcript, last.transcript_preprocessed)
+        self._fill_transcript_segment_table(self.table_transcript, selected.transcript_preprocessed)
 
-        if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(last.extract_preprocessed) > 0:
-            self._fill_extract_segment_table(self.table_extract, last.extract_preprocessed, self.sim_matrix[self.current_transcript_index, :])
+        if self.sim_matrix is not None and self.sim_matrix.size > 0 and len(selected.extract_preprocessed) > 0:
+            self._fill_extract_segment_table(self.table_extract, selected.extract_preprocessed, self.sim_matrix[self.current_transcript_index, :])
             self.table_transcript.selectRow(0)
         else:
             self._clear_table(self.table_extract)
@@ -491,18 +524,27 @@ class DeviationTab(QWidget, BaseTab):
         rows = self.table_history.selectionModel().selectedRows()
         if not rows:
             return
-        self._show_history_index(rows[0].row())
-        self.project.current.deviation_analysis = self.project.deviation_analysis_results[rows[0].row()]
+        row = rows[0].row()
+        self._show_history_index(row)
+        if 0 <= row < len(self._history_results):
+            self.project.current.deviation_analysis = self._history_results[row]
+            self.project.current.synchronization = None
+            win = self.window()
+            if hasattr(win, "tab_alignment"):
+                win.tab_alignment._fill_all_tables_with_latest()
 
     def _show_history_index(self, row: int):
-        if not self.project or not getattr(self.project, "deviation_analysis_results", None):
+        if not self.project:
             return
 
-        if row < 0 or row >= len(self.project.deviation_analysis_results):
+        if row < 0 or row >= len(self._history_results):
             return
 
-        col: DeviationResultCollection = self.project.deviation_analysis_results[row]
+        col: DeviationResultCollection = self._history_results[row]
         self.sim_matrix = col.result_matrix
+
+        if getattr(self.project, "current", None) is not None:
+            self.project.current.deviation_analysis = col
 
         self._fill_transcript_segment_table(self.table_transcript, col.transcript_preprocessed)
         self._fill_extract_segment_table(self.table_extract, col.extract_preprocessed, col.result_matrix[self.current_transcript_index, :])
