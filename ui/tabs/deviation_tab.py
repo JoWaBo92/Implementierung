@@ -449,8 +449,8 @@ class DeviationTab(QWidget, BaseTab):
                 else DeviationMethod.STANDARD
             )
 
-            gamma_map = {"schwach": 2.5, "mittel": 4.0, "stark": 7.0}
-            gamma = float(gamma_map.get(self.combo_pos_strength.currentText(), 4.0))
+        gamma_map = {"schwach": 2.5, "mittel": 4.0, "stark": 7.0}
+        gamma = float(gamma_map.get(self.combo_pos_strength.currentText(), 4.0))
 
         len_preset = self.combo_len_strength.currentText().lower()
         len_map = {
@@ -460,16 +460,16 @@ class DeviationTab(QWidget, BaseTab):
         }
         lp = len_map.get(len_preset, len_map["mittel"])
 
-            config = DeviationAnalysisConfig(
-                library=library,
-                method=method,
-                similar_length=self.chk_similar_length.isChecked(),
-                length_min_ratio=lp["min_ratio"],
-                length_alpha=lp["alpha"],
-                ultra_short_tokens=lp["ultra_short_tokens"],
-                similar_position=self.chk_pos_in_src.isChecked(),
-                position_gamma=gamma,
-            )
+        config = DeviationAnalysisConfig(
+            library=library,
+            method=method,
+            similar_length=self.chk_similar_length.isChecked(),
+            length_min_ratio=lp["min_ratio"],
+            length_alpha=lp["alpha"],
+            ultra_short_tokens=lp["ultra_short_tokens"],
+            similar_position=self.chk_pos_in_src.isChecked(),
+            position_gamma=gamma,
+        )
 
         transcript_results = list(self.project.current.preprocessing.transcript_results)
         extract_results = list(self.project.current.preprocessing.extract_results)

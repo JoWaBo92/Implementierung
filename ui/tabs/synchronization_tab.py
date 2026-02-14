@@ -600,18 +600,18 @@ class SynchronizationTab(QWidget, BaseTab):
         step_h_map = {"schwach": 0.08, "mittel": 0.12, "stark": 0.22}
         min_sim_map = {"niedrig": 0.10, "mittel": 0.18, "hoch": 0.28}
 
-            asr_choice = (self.combo_asr_split.currentText() or "mittel").strip().lower()
-            tr_choice = (self.combo_tr_merge.currentText() or "mittel").strip().lower()
-            min_choice = (self.combo_min_sim.currentText() or "mittel").strip().lower()
+        asr_choice = (self.combo_asr_split.currentText() or "mittel").strip().lower()
+        tr_choice = (self.combo_tr_merge.currentText() or "mittel").strip().lower()
+        min_choice = (self.combo_min_sim.currentText() or "mittel").strip().lower()
 
-            step_v = float(step_v_map.get(asr_choice, 0.10))
-            step_h = float(step_h_map.get(tr_choice, 0.12))
-            min_sim = float(min_sim_map.get(min_choice, 0.18))
+        step_v = float(step_v_map.get(asr_choice, 0.10))
+        step_h = float(step_h_map.get(tr_choice, 0.12))
+        min_sim = float(min_sim_map.get(min_choice, 0.18))
 
-            band = None
-            if self.chk_use_band.isChecked():
-                b = int(self.spin_band.value())
-                band = b if b > 0 else 0
+        band = None
+        if self.chk_use_band.isChecked():
+            b = int(self.spin_band.value())
+            band = b if b > 0 else 0
 
         synch_config = SynchronizationConfig(step_v=step_v, step_h=step_h, min_sim=min_sim, band=band)
 
