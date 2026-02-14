@@ -19,6 +19,7 @@ from domain.deviation import DeviationAnalysisConfig, DeviationCalculator, Devia
 
 class AlignmentAlgorithm(Enum):
     DTW = "DTW"
+    GREEDY_MONO = "GREEDY_MONO"
 
 @dataclass
 class SynchronizationConfig:
@@ -30,6 +31,8 @@ class SynchronizationConfig:
     min_sim: Optional[float] = 0.15
     big_cost: float = 1e6
 
+    greedy_advance: int = 1
+
     band: Optional[int] = None
 
     def to_dict(self) -> dict:
@@ -40,7 +43,8 @@ class SynchronizationConfig:
             "step_h": float(self.step_h),
             "min_sim": (float(self.min_sim) if self.min_sim is not None else None),
             "big_cost": float(self.big_cost),
-            "band": (int(self.band) if self.band is not None else None),
+            "greedy_advance": int(self.greedy_advance),
+            "band": (int(self.band) if self.band is not None else None)
         }
 
     @classmethod
@@ -80,6 +84,7 @@ class SynchronizationConfig:
             min_sim=min_sim,
             big_cost=float(d.get("big_cost", 1e6)),
             band=band,
+            greedy_advance=int(d.get("greedy_advance", 1))
         )
 
 @dataclass
@@ -96,6 +101,8 @@ class SynchronizationCalculator:
     def synchronize(self, sim_matrix: np.ndarray) -> SynchronizationResult:
         if self.config.algorithm == AlignmentAlgorithm.DTW:
             return self._dtw_align(sim_matrix)
+        if self.config.algorithm == AlignmentAlgorithm.GREEDY_MONO:
+            return self._greedy_mono_align(sim_matrix)
         raise ValueError(f"Unknown algorithm: {self.config.algorithm}")
     
     def _dtw_align(self, sim: np.ndarray) -> SynchronizationResult:
@@ -219,6 +226,60 @@ class SynchronizationCalculator:
             else:
                 out.append((int(mins[i]), int(maxs[i])))
         return out
+    
+    def _greedy_mono_align(self, sim: np.ndarray) -> SynchronizationResult:
+        if sim.ndim != 2:
+            raise ValueError("sim_matrix must be 2D (n_transcript x n_extract)")
+        nT, nE = sim.shape
+        if nT == 0 or nE == 0:
+            return SynchronizationResult(
+                path=[],
+                total_cost=float("inf"),
+                mean_similarity_on_path=float("nan"),
+                ranges_by_transcript=[(-1, -1)] * nT,
+            )
+
+        min_sim = self.config.min_sim
+        big_cost = float(self.config.big_cost)
+        greedy_advance = int(getattr(self.config, "greedy_advance", 1))
+
+        path: List[Tuple[int, int]] = []
+        total_cost = 0.0
+        sims_on_path: List[float] = []
+
+        j_min = 0
+        for i in range(nT):
+            if j_min >= nE:
+                break
+
+            row = sim[i, j_min:]
+            rel = int(np.argmax(row))
+            j = j_min + rel
+            s = float(sim[i, j])
+
+            if min_sim is not None and s < float(min_sim):
+                continue
+
+            path.append((i, j))
+            sims_on_path.append(s)
+
+            c = (1.0 - s) if (min_sim is None or s >= float(min_sim)) else big_cost
+            total_cost += float(c)
+
+            j_min = j + greedy_advance
+
+        ranges = [(-1, -1)] * nT
+        for (i, j) in path:
+            ranges[i] = (j, j)
+
+        mean_sim = float(np.mean(sims_on_path)) if sims_on_path else float("nan")
+
+        return SynchronizationResult(
+            path=path,
+            total_cost=float(total_cost),
+            mean_similarity_on_path=mean_sim,
+            ranges_by_transcript=ranges,
+        )
 
 
 def plot_similarity_matrix(result_table):
@@ -268,12 +329,14 @@ if __name__ == "__main__":
     transcript = ManualTranscript("FaPra Timealignment\ADG3149_01_01.odt")
     print("Source documents loaded")
 
-    pipe = PreprocessingPipeline(config=PreprocessingConfig(spacy_model="de_dep_news_trf"))
+    # pipe = PreprocessingPipeline(config=PreprocessingConfig(spacy_model="de_dep_news_trf"))
+    pipe = PreprocessingPipeline(config=PreprocessingConfig(spacy_model="de_core_news_md"))
     extract_results = pipe.run_batch(extract.segments)
     transcript_results = pipe.run_batch(transcript.segments)
     print("Source documents preprocessed")
 
-    deviation_config = DeviationAnalysisConfig(method=DeviationMethod.SENT_TRF, library="paraphrase-multilingual-MiniLM-L12-v2", similar_length=False, similar_position=True)
+    deviation_config = DeviationAnalysisConfig("de_core_news_md", DeviationMethod.STANDARD)
+    # deviation_config = DeviationAnalysisConfig(method=DeviationMethod.SENT_TRF, library="paraphrase-multilingual-MiniLM-L12-v2", similar_length=False, similar_position=True)
     deviation_calc = DeviationCalculator(config=deviation_config)
 
     transcript_docs = [r.doc for r in transcript_results]

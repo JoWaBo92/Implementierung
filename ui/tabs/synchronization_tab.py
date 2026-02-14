@@ -10,7 +10,7 @@ import numpy as np
 from typing import List, Optional, Any
 
 from domain.project import Project, SynchronizationResultCollection
-from domain.synchronization import SynchronizationCalculator, SynchronizationConfig
+from domain.synchronization import SynchronizationCalculator, SynchronizationConfig, AlignmentAlgorithm
 
 from utils import BaseTab, TableUtils
 
@@ -96,7 +96,7 @@ class SynchronizationTab(QWidget, BaseTab):
         row_alg.addWidget(QLabel("Verfahren:"))
 
         self.combo_algorithm = QComboBox()
-        self.combo_algorithm.addItems(["DTW (Sequenz-Alignment)"])
+        self.combo_algorithm.addItems(["DTW (Sequenz-Alignment)", "Greedy (Monoton, Baseline)"])
         row_alg.addWidget(self.combo_algorithm, 1)
         layout.addLayout(row_alg)
 
@@ -315,7 +315,6 @@ class SynchronizationTab(QWidget, BaseTab):
             table.blockSignals(False)
 
         # Auto-select current (falls gesetzt), sonst letztes Ergebnis
-        # Auto-select current (falls gesetzt), sonst letztes Ergebnis
         if len(results) > 0:
             idx = len(results) - 1
             cur = getattr(getattr(self.project, "current", None), "synchronization", None)
@@ -323,13 +322,6 @@ class SynchronizationTab(QWidget, BaseTab):
                 idx = results.index(cur)
             table.selectRow(idx)
             self._show_history_index(idx)
-            idx = len(results) - 1
-            cur = getattr(getattr(self.project, "current", None), "synchronization", None)
-            if cur in results:
-                idx = results.index(cur)
-            table.selectRow(idx)
-            self._show_history_index(idx)
-
 
     def _fill_transcript_table(self, segments: List[Any]):
         table = self.table_transcript
@@ -516,13 +508,7 @@ class SynchronizationTab(QWidget, BaseTab):
 
         cur = getattr(getattr(self.project, "current", None), "synchronization", None)
         selected = cur if (cur in results) else results[-1]
-        # Ergebnis wählen: project.current.synchronization bevorzugen, sonst letztes Ergebnis
-        cur = getattr(getattr(self.project, "current", None), "synchronization", None)
-        selected = cur if (cur in results) else results[-1]
 
-        if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
-            setattr(self.project.current, "synchronization", selected)
-        # update project.current (nur setzen, wenn noch nichts gewählt)
         if getattr(self.project, "current", None) is not None and getattr(self.project.current, "synchronization", None) is None:
             setattr(self.project.current, "synchronization", selected)
 
@@ -534,12 +520,7 @@ class SynchronizationTab(QWidget, BaseTab):
         self.sim_matrix = getattr(selected, "similarity_matrix", None)
         self.align_path = getattr(selected, "alignment_path", None)
         self.align_ranges_by_transcript = getattr(selected, "alignment_ranges_by_transcript", None)
-        self.sim_matrix = getattr(selected, "similarity_matrix", None)
-        self.align_path = getattr(selected, "alignment_path", None)
-        self.align_ranges_by_transcript = getattr(selected, "alignment_ranges_by_transcript", None)
 
-        transcript_results = getattr(selected, "transcript_preprocessed", None) or []
-        extract_results = getattr(selected, "extract_preprocessed", None) or []
         transcript_results = getattr(selected, "transcript_preprocessed", None) or []
         extract_results = getattr(selected, "extract_preprocessed", None) or []
 
@@ -556,7 +537,6 @@ class SynchronizationTab(QWidget, BaseTab):
 
         # select transcript row (will NOT trigger show handler reliably if signals blocked elsewhere)
         self.table_transcript.selectRow(self.current_transcript_index)
-        self._show_transcript_index(self.current_transcript_index)
         self._show_transcript_index(self.current_transcript_index)
 
         # fill aligned extract table
@@ -613,7 +593,15 @@ class SynchronizationTab(QWidget, BaseTab):
             b = int(self.spin_band.value())
             band = b if b > 0 else 0
 
-        synch_config = SynchronizationConfig(step_v=step_v, step_h=step_h, min_sim=min_sim, band=band)
+        alg_text = (self.combo_algorithm.currentText() or "").lower()
+        algorithm = AlignmentAlgorithm.DTW
+        if "greedy" in alg_text:
+            algorithm = AlignmentAlgorithm.GREEDY_MONO
+
+        synch_config = SynchronizationConfig(
+            algorithm=algorithm,
+            step_v=step_v, step_h=step_h, min_sim=min_sim, band=band
+        )
 
         # snapshot extract times (ms) for aligned transcript build
         extract_times_ms = [tm.time for tm in getattr(self.project.asr_extract, "times", [])]
@@ -641,8 +629,6 @@ class SynchronizationTab(QWidget, BaseTab):
 
             self.project.synchronization_results.append(col)
             self.project.current.synchronization = col
-            self.project.synchronization_results.append(col)
-            self.project.current.synchronization = col
 
             self.results = self.project.synchronization_results
             self.sim_matrix = sim
@@ -653,9 +639,6 @@ class SynchronizationTab(QWidget, BaseTab):
             self._fill_history_table()
             self._fill_transcript_table(transcript_results)
 
-            if len(transcript_results) > 0:
-                self.table_transcript.selectRow(0)
-                self._show_transcript_index(0)
             if len(transcript_results) > 0:
                 self.table_transcript.selectRow(0)
                 self._show_transcript_index(0)
