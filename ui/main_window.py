@@ -4,6 +4,7 @@ from PyQt5.QtCore import Qt
 from persistence.project_repository import save_project, load_project
 
 from ui.actions import AppActions
+from ui.help import HelpDialog
 from ui.tabs.project_tab import ProjectTab
 from ui.tabs.preprocessing_tab import PreprocessingTab
 from ui.tabs.deviation_tab import DeviationTab
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
         self.actions.load_transcript.triggered.connect(self.on_load_transcript)
         self.actions.load_asr_extract.triggered.connect(self.on_load_asr_extract)
         self.actions.export.triggered.connect(self.on_export)
+        self.actions.help_manual.triggered.connect(self.on_help)
         self.actions.exit.triggered.connect(self.close)
 
         # Analyse-Menü: Tab fokussieren
@@ -63,6 +65,9 @@ class MainWindow(QMainWindow):
         analysis_menu.addAction(self.actions.preprocessing)
         analysis_menu.addAction(self.actions.deviation)
         analysis_menu.addAction(self.actions.alignment)
+
+        help_menu = menubar.addMenu("Hilfe")
+        help_menu.addAction(self.actions.help_manual)
 
     def _create_toolbar(self):
         toolbar = QToolBar("Haupt-Toolbar", self)
@@ -115,7 +120,6 @@ class MainWindow(QMainWindow):
             pass
 
     def update_ui_state(self):
-        """Aktiviert/Deaktiviert Actions abhängig vom Projektzustand."""
         has_transcript = getattr(self.project, "transcript", None) is not None
         has_asr = getattr(self.project, "asr_extract", None) is not None
 
@@ -208,6 +212,10 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Export gespeichert: {file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Export fehlgeschlagen", str(e))
+    
+    def on_help(self):
+        dlg = HelpDialog(self)
+        dlg.exec_()
 
     def on_new_project(self):
         has_sources = bool(getattr(self.project, "transcript", None) or getattr(self.project, "asr_extract", None))

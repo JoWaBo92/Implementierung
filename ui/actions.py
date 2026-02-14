@@ -40,6 +40,10 @@ class AppActions:
         self.alignment = QAction("Synchronisierung", parent)
         self.alignment.setShortcut("Ctrl+3")
 
+        self.help_manual = QAction("Anleitung", parent)
+        self.help_manual.setShortcut("F1")
+        self.help_manual.setStatusTip("Anleitung zum Programm anzeigen")
+
         self.exit = QAction("Beenden", parent)
         self.exit.setShortcut("Ctrl+Q")
         self.exit.setStatusTip("Programm beenden")
