@@ -51,7 +51,6 @@ class MainWindow(QMainWindow):
 
         file_menu = menubar.addMenu("Datei")
         file_menu.addAction(self.actions.new_project)
-        file_menu.addAction(self.actions.load_project)
         file_menu.addAction(self.actions.load_transcript)
         file_menu.addAction(self.actions.load_asr_extract)
         file_menu.addSeparator()
