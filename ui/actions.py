@@ -7,6 +7,10 @@ class AppActions:
     """
 
     def __init__(self, parent):
+        self.new_project = QAction("Neues Projekt", parent)
+        self.new_project.setShortcut("Ctrl+N")
+        self.new_project.setStatusTip("Neues Projekt erstellen")
+
         self.load_project = QAction("Projekt öffnen", parent)
         self.load_project.setShortcut("Ctrl+O")
         self.load_project.setStatusTip("Projekt laden")

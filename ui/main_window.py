@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         self.update_ui_state()
 
     def _wire_actions(self):
+        self.actions.new_project.triggered.connect(self.on_new_project)
         self.actions.load_project.triggered.connect(self.on_load_project)
         self.actions.save_project.triggered.connect(self.on_save_project)
         self.actions.load_transcript.triggered.connect(self.on_load_transcript)
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("Datei")
+        file_menu.addAction(self.actions.new_project)
         file_menu.addAction(self.actions.load_project)
         file_menu.addAction(self.actions.load_transcript)
         file_menu.addAction(self.actions.load_asr_extract)
@@ -69,6 +71,7 @@ class MainWindow(QMainWindow):
         toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         self.addToolBar(toolbar)
 
+        toolbar.addAction(self.actions.new_project)
         toolbar.addAction(self.actions.load_project)
         toolbar.addAction(self.actions.load_transcript)
         toolbar.addAction(self.actions.load_asr_extract)
@@ -206,6 +209,40 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Export gespeichert: {file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Export fehlgeschlagen", str(e))
+
+    def on_new_project(self):
+        has_sources = bool(getattr(self.project, "transcript", None) or getattr(self.project, "asr_extract", None))
+        has_results = bool(hasattr(self.project, "has_analysis_results") and self.project.has_analysis_results())
+
+        if has_sources or has_results:
+            res = QMessageBox.warning(
+                self,
+                "Neues Projekt",
+                "Das aktuelle Projekt wird verworfen (inkl. geladener Dateien und Analyse-Ergebnisse).\n\nFortfahren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if res != QMessageBox.Yes:
+                return
+
+        # Neues Projektobjekt
+        self.project = Project()
+
+        # Tabs auf neues Projekt setzen
+        self.tab_project.set_project(self.project)
+        self.tab_preprocessing.set_project(self.project)
+        self.tab_deviation.set_project(self.project)
+        self.tab_alignment.set_project(self.project)
+
+        # Log / Status
+        try:
+            self.tab_project.set_log_text("")
+        except Exception:
+            pass
+
+        self.update_ui_state()
+        self.statusBar().showMessage("Neues Projekt erstellt")
+        self._switch_to_tab(self.tab_project)
 
     # ---------- Event Handlers -------------
     def on_load_project(self):
